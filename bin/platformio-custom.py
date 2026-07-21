@@ -2,6 +2,7 @@
 # trunk-ignore-all(ruff/F821)
 # trunk-ignore-all(flake8/F821): For SConstruct imports
 import sys
+import os
 from os.path import join
 import subprocess
 import json
@@ -196,6 +197,165 @@ def manifest_write(files, env):
     # Write the manifest to the build directory
     with open(env.subst("$BUILD_DIR/${PROGNAME}.mt.json"), "w") as f:
         json.dump(manifest, f, indent=2)
+
+
+def has_cpp_define(env_obj, define_name, expected_value=None):
+    for define in env_obj.get("CPPDEFINES", []):
+        if isinstance(define, tuple):
+            name, value = define
+            if name == define_name:
+                if expected_value is None:
+                    return True
+                return str(value) == str(expected_value)
+        elif define == define_name and expected_value is None:
+            return True
+    return False
+
+
+def get_project_option_safe(option_name, default=None):
+    try:
+        return env.GetProjectOption(option_name)
+    except Exception:
+        return default
+
+
+def resolve_serial_port():
+    candidates = [
+        get_project_option_safe("monitor_port"),
+        get_project_option_safe("upload_port"),
+        env.get("MONITOR_PORT"),
+        env.get("UPLOAD_PORT"),
+    ]
+
+    for candidate in candidates:
+        if candidate and "$" not in str(candidate):
+            return str(candidate)
+
+    upload_port = env.subst("$UPLOAD_PORT")
+    if upload_port and "$" not in upload_port:
+        return upload_port
+
+    return None
+
+
+def normalize_serial_port(port):
+    if not port:
+        return port
+    if port.startswith("/dev/cu."):
+        tty_port = "/dev/tty." + port[len("/dev/cu.") :]
+        if os.path.exists(tty_port):
+            return tty_port
+    return port
+
+
+def should_auto_upload_chinese_font():
+    val = env.GetProjectOption("custom_upload_external_chinese_font", None)
+    if val is None:
+        return False
+
+    if platform.name != "nordicnrf52":
+        return False
+
+    if not has_cpp_define(env, "CNFONT_EMBED_INTERNAL_TABLE", 0):
+        return False
+
+    return get_project_option_safe("custom_upload_external_chinese_font", "true").lower() == "true"
+
+
+def append_optional_arg(cmd, option_name, option_value):
+    if option_value is None:
+        return
+    option_value = str(option_value).strip()
+    if option_value == "":
+        return
+    cmd.extend([option_name, option_value])
+
+
+def auto_upload_chinese_font(source, target, env):
+    if not should_auto_upload_chinese_font():
+        return
+
+    port = resolve_serial_port()
+    if not port:
+        print("Skipping external Chinese font upload: no serial port configured")
+        return
+    port = normalize_serial_port(port)
+
+    project_dir = env["PROJECT_DIR"]
+    python_exe = sys.executable
+    font_source = str(get_project_option_safe("custom_external_font_source", "src/graphics/fonts/ChineseFontData.cpp"))
+    font_output = str(get_project_option_safe("custom_external_font_output", "bin/chinese_font.bin"))
+    font_target = str(get_project_option_safe("custom_external_font_target", "qspi://chinese_font.bin"))
+    font_type_name = str(get_project_option_safe("custom_external_font_type_name", "ChineseFont"))
+    font_array_name = str(get_project_option_safe("custom_external_font_array_name", "chineseFont"))
+    key_size = get_project_option_safe("custom_external_font_key_size", "4")
+    glyph_width = get_project_option_safe("custom_external_font_glyph_width")
+    glyph_height = get_project_option_safe("custom_external_font_glyph_height")
+    bitmap_size = get_project_option_safe("custom_external_font_bitmap_size")
+    font_magic = get_project_option_safe("custom_external_font_magic", "0x43484631")
+    font_version = get_project_option_safe("custom_external_font_version", "1")
+    font_max_bytes = get_project_option_safe("custom_external_font_max_bytes", "0x00080000")
+
+    font_bin = join(project_dir, font_output)
+    generate_script = join(project_dir, "bin", "generate_chinese_font_bin.py")
+    upload_script = join(project_dir, "bin", "upload_chinese_font_to_device.py")
+    baud = str(get_project_option_safe("monitor_speed", env.get("MONITOR_SPEED", 115200)))
+
+    print("Generating external Chinese font image")
+    generate_cmd = [
+        python_exe,
+        generate_script,
+        "--input",
+        font_source,
+        "--output",
+        font_bin,
+        "--font-type-name",
+        font_type_name,
+        "--font-array-name",
+        font_array_name,
+        "--key-size",
+        str(key_size),
+        "--magic",
+        str(font_magic),
+        "--version",
+        str(font_version),
+    ]
+    append_optional_arg(generate_cmd, "--glyph-width", glyph_width)
+    append_optional_arg(generate_cmd, "--glyph-height", glyph_height)
+    append_optional_arg(generate_cmd, "--bitmap-size", bitmap_size)
+    subprocess.check_call(generate_cmd, cwd=project_dir)
+
+    print(f"Uploading external Chinese font image via {port}")
+    upload_cmd = [
+        python_exe,
+        upload_script,
+        "--port",
+        port,
+        "--baud",
+        baud,
+        "--input",
+        font_bin,
+        "--target-name",
+        font_target,
+        "--key-size",
+        str(key_size),
+        "--magic",
+        str(font_magic),
+        "--version",
+        str(font_version),
+        "--max-bytes",
+        str(font_max_bytes),
+        "--wait-seconds",
+        "20",
+        "--boot-wait",
+        "6",
+    ]
+    append_optional_arg(upload_cmd, "--bitmap-size", bitmap_size)
+    subprocess.check_call(upload_cmd, cwd=project_dir)
+
+
+if should_auto_upload_chinese_font():
+    env.AddPostAction("upload", auto_upload_chinese_font)
 
 Import("projenv")
 

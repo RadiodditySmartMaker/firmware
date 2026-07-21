@@ -22,6 +22,10 @@
 #include "modules/CannedMessageModule.h"
 #include "modules/ExternalNotificationModule.h"
 #include "modules/KeyVerificationModule.h"
+#ifdef Nodara
+#include "graphics/draw/ChannelMessageRenderer.h"
+#include "graphics/draw/NotificationRenderer.h"
+#endif
 #include "modules/TraceRouteModule.h"
 #include <algorithm>
 #include <array>
@@ -86,6 +90,12 @@ void menuHandler::loraMenu()
     };
     screen->showOverlayBanner(bannerOptions);
 }
+
+#ifdef Nodara
+static char pendingConfirmMessage[256];
+static std::function<void()> pendingConfirmCallback;
+
+#endif
 
 void menuHandler::OnboardMessage()
 {
@@ -377,14 +387,34 @@ void menuHandler::twelveHourPicker()
 // Reusable confirmation prompt function
 void menuHandler::showConfirmationBanner(const char *message, std::function<void()> onConfirm)
 {
+    LOG_INFO("showConfirmationBanner called with message: %s", message);
+
+#ifdef Nodara
+    if (NotificationRenderer::isOverlayBannerShowing()) {
+        LOG_INFO("showConfirmationBanner: Overlay banner showing, using menuQueue mechanism");
+        strncpy(pendingConfirmMessage, message, sizeof(pendingConfirmMessage) - 1);
+        pendingConfirmMessage[sizeof(pendingConfirmMessage) - 1] = '\0';
+        pendingConfirmCallback = onConfirm;
+        menuHandler::menuQueue = menuHandler::confirmation_dialog_menu;
+        screen->runNow();
+        return;
+    }
+#endif
+
+    // 直接显示确认对话框（没有 overlay banner 显示时，如 CannedMessageModule）
     static const char *confirmOptions[] = {"No", "Yes"};
     BannerOverlayOptions confirmBanner;
     confirmBanner.message = message;
     confirmBanner.optionsArrayPtr = confirmOptions;
     confirmBanner.optionsCount = 2;
+    confirmBanner.InitialSelected = 0;
     confirmBanner.bannerCallback = [onConfirm](int confirmSelected) -> void {
+        LOG_INFO("Confirmation banner callback: selected=%d (0=No, 1=Yes)", confirmSelected);
         if (confirmSelected == 1) {
+            LOG_INFO("User confirmed, executing callback");
             onConfirm();
+        } else {
+            LOG_INFO("User cancelled (selected No)");
         }
     };
     screen->showOverlayBanner(confirmBanner);
@@ -657,6 +687,7 @@ void menuHandler::replyMenu()
         // Preset reply
         if (selected == ReplyPreset) {
 
+
             if (mode == graphics::MessageRenderer::ThreadMode::CHANNEL) {
                 cannedMessageModule->LaunchWithDestination(NODENUM_BROADCAST, ch);
 
@@ -677,6 +708,7 @@ void menuHandler::replyMenu()
 
         // Freetext reply
         if (selected == ReplyFreetext) {
+
 
             if (mode == graphics::MessageRenderer::ThreadMode::CHANNEL) {
                 cannedMessageModule->LaunchFreetextWithDestination(NODENUM_BROADCAST, ch);
@@ -936,7 +968,7 @@ void menuHandler::homeBaseMenu()
         }
         optionsEnumArray[options++] = Mute;
     }
-#if defined(PIN_EINK_EN) || defined(PCA_PIN_EINK_EN)
+#if (defined(PIN_EINK_EN) || defined(PCA_PIN_EINK_EN))
     optionsArray[options] = "Toggle Backlight";
     optionsEnumArray[options++] = Backlight;
 #else
@@ -1036,6 +1068,112 @@ void menuHandler::textMessageBaseMenu()
     };
     screen->showOverlayBanner(bannerOptions);
 }
+
+#ifdef Nodara
+void menuHandler::channelHistoryMenu()
+{
+    LOG_INFO("channelHistoryMenu() called, validChannelCount=%d", validChannelCount);
+    // 如果当前没有可用的频道，直接返回
+    if (validChannelCount == 0) {
+        LOG_INFO("No channels");
+        screen->showSimpleBanner("No channels", 2000);
+        return;
+    }
+
+    static const int MAX_OPTIONS = MAX_VALID_CHANNELS;
+    static const char *optionsArray[MAX_OPTIONS];
+    static int optionsEnumArray[MAX_OPTIONS];
+    static char optionLabels[MAX_OPTIONS][24];
+
+    int optionCount = 0;
+
+    for (int i = 0; i < validChannelCount && optionCount < MAX_OPTIONS; ++i) {
+        int chIndex = validChannelIndices[i];
+
+        const char *name = channelFile.channels[chIndex].settings.name;
+        bool isPrimary = (channelFile.channels[chIndex].role == meshtastic_Channel_Role_PRIMARY);
+
+        const char *displayName = nullptr;
+        if (name && strlen(name) > 0) {
+            displayName = name;
+        } else {
+            // Channel的预设名称
+            switch (config.lora.modem_preset) {
+            case meshtastic_Config_LoRaConfig_ModemPreset_LONG_FAST:
+                displayName = "Long_fast";
+                break;
+            case meshtastic_Config_LoRaConfig_ModemPreset_LONG_SLOW:
+                displayName = "Long_slow";
+                break;
+            case meshtastic_Config_LoRaConfig_ModemPreset_VERY_LONG_SLOW:
+                displayName = "Very_long_slow";
+                break;
+            case meshtastic_Config_LoRaConfig_ModemPreset_MEDIUM_SLOW:
+                displayName = "Medium_slow";
+                break;
+            case meshtastic_Config_LoRaConfig_ModemPreset_MEDIUM_FAST:
+                displayName = "Medium_fast";
+                break;
+            case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_SLOW:
+                displayName = "Short_slow";
+                break;
+            case meshtastic_Config_LoRaConfig_ModemPreset_SHORT_FAST:
+                displayName = "Short_fast";
+                break;
+            default:
+                displayName = "Long_fast";
+                break;
+            }
+        }
+
+        snprintf(optionLabels[optionCount], sizeof(optionLabels[optionCount]), isPrimary ? "Pri Ch: %s" : "Sec Ch: %s",
+                 displayName);
+
+        optionsArray[optionCount] = optionLabels[optionCount];
+        optionsEnumArray[optionCount] = chIndex; // 实际频道索引（0~7）
+        ++optionCount;
+    }
+
+    BannerOverlayOptions bannerOptions;
+    bannerOptions.message = "Select Channel";
+    bannerOptions.durationMs = 0;
+    bannerOptions.optionsArrayPtr = optionsArray;
+    bannerOptions.optionsEnumPtr = optionsEnumArray;
+    bannerOptions.optionsCount = optionCount;
+    bannerOptions.notificationType = notificationTypeEnum::selection_picker;
+
+    // 初始选中当前正在浏览的频道
+    int initialSelected = 0;
+    for (int i = 0; i < optionCount; ++i) {
+        if (optionsEnumArray[i] == static_cast<int>(channelIndex)) {
+            initialSelected = i;
+            break;
+        }
+    }
+    bannerOptions.InitialSelected = initialSelected;
+
+    bannerOptions.bannerCallback = [](int selectedChannel) {
+        if (selectedChannel < 0 || selectedChannel >= 8) {
+            return;
+        }
+
+        channelIndex = static_cast<size_t>(selectedChannel);
+
+        if (chatHistoryStore) {
+            uint16_t packetListSize = chatHistoryStore->getMeshPacketListSize(static_cast<uint8_t>(channelIndex));
+            channelPacketBrowseIndex = (packetListSize > 0) ? (packetListSize - 1) : 0;
+        } else {
+            channelPacketBrowseIndex = 0;
+        }
+
+        screen->runNow(); // 立即刷新，使频道历史页面更新
+    };
+
+    LOG_INFO("channelHistoryMenu: About to call showOverlayBanner with %d options", optionCount);
+    screen->showOverlayBanner(bannerOptions);
+    LOG_INFO("channelHistoryMenu: showOverlayBanner called");
+}
+#endif
 
 void menuHandler::systemBaseMenu()
 {
@@ -2209,6 +2347,189 @@ void menuHandler::traceRouteMenu()
     });
 }
 
+void menuHandler::directMessageNodePickerMenu()
+{
+#ifdef Nodara
+    screen->showNodePicker("Select Node for DM", 0,
+                           [](uint32_t nodenum) -> void
+#else
+    screen->showNodePicker("Select Node for DM", 30000,
+                           [](uint32_t nodenum) -> void
+#endif
+                           {
+                               LOG_INFO("Menu: Direct message node picker selected node 0x%08x", nodenum);
+
+#ifdef Nodara
+                               if (chatHistoryStore) {
+                                   chatHistoryStore->setCurrentDirectMessageNode(nodenum);
+                                   screen->setFrames(graphics::Screen::FOCUS_PRESERVE);
+                               }
+#endif
+                           });
+}
+
+void menuHandler::directMessageActionMenu()
+{
+#ifdef Nodara
+    enum optionsNumbers { Back = 0, SelectNode = 1, Preset = 2, DelThis = 3, DelAll = 4, enumEnd = 5 };
+
+    static const char *optionsArray[enumEnd] = {"Back", "Select Node", "Send Preset", "Del This", "Del All"};
+    static int optionsEnumArray[enumEnd] = {Back, SelectNode, Preset, DelThis, DelAll};
+
+    BannerOverlayOptions bannerOptions;
+    bannerOptions.message = "Direct Message";
+    bannerOptions.optionsArrayPtr = optionsArray;
+    bannerOptions.optionsEnumPtr = optionsEnumArray;
+    bannerOptions.optionsCount = enumEnd;
+    bannerOptions.durationMs = 0;
+    bannerOptions.bannerCallback = [](int selected) -> void {
+        if (selected == SelectNode) {
+            menuHandler::menuQueue = menuHandler::direct_message_node_picker;
+            screen->runNow();
+        } else if (selected == Preset) {
+            if (cannedMessageModule && chatHistoryStore) {
+                NodeNum currentNode = chatHistoryStore->getCurrentDirectMessageNode();
+                if (currentNode != 0) {
+
+                    cannedMessageModule->LaunchWithDestination(currentNode);
+                } else {
+                    screen->showSimpleBanner("No DM node selected", 2000);
+                }
+            }
+        } else if (selected == DelThis) {
+            if (chatHistoryStore) {
+
+                LOG_INFO("DM DelThis: selected, checking chatHistoryStore");
+                NodeNum currentNode = chatHistoryStore->getCurrentDirectMessageNode();
+                if (currentNode != 0) {
+                    LOG_INFO("DM DelThis: currentNode=%08x, Calling showConfirmationBanner", currentNode);
+                    menuHandler::showConfirmationBanner("Delete this message?", [currentNode]() -> void {
+                        int msgCount = chatHistoryStore->getDirectMessageListSizeForNode(currentNode);
+                        if (msgCount > 0) {
+                            chatHistoryStore->deleteCurrentDirectMessage();
+                            screen->setFrames(graphics::Screen::FOCUS_PRESERVE);
+                        }
+                    });
+                }
+            }
+            // 如果没有节点，直接返回，菜单会自动关闭
+        } else if (selected == DelAll) {
+            LOG_INFO("DM DelAll: selected, checking chatHistoryStore");
+            NodeNum currentNode = chatHistoryStore ? chatHistoryStore->getCurrentDirectMessageNode() : 0;
+            if (currentNode != 0) {
+                char confirmMsg[64];
+                snprintf(confirmMsg, sizeof(confirmMsg), "Delete all messages\nfor this node?");
+                LOG_INFO("DM DelAll: currentNode=%08x, Calling showConfirmationBanner", currentNode);
+                menuHandler::showConfirmationBanner(confirmMsg, [currentNode]() -> void {
+                    if (chatHistoryStore) {
+                        int msgCount = chatHistoryStore->getDirectMessageListSizeForNode(currentNode);
+                        if (msgCount > 0) {
+                            chatHistoryStore->deleteAllDirectMessagesForNode(currentNode);
+                            screen->setFrames(graphics::Screen::FOCUS_PRESERVE);
+                        }
+                    }
+                });
+            }
+            // 如果没有节点，直接返回，菜单会自动关闭
+        }
+    };
+    screen->showOverlayBanner(bannerOptions);
+#endif
+}
+
+void menuHandler::channelMessageActionMenu()
+{
+#ifdef Nodara
+    enum optionsNumbers { Back = 0, SelectChannel = 1, Preset = 2, DelThis = 3, DelAll = 4, enumEnd = 5 };
+
+    static const char *optionsArray[enumEnd] = {"Back", "Select Channel", "Send Preset", "Del This", "Del All"};
+    static int optionsEnumArray[enumEnd] = {Back, SelectChannel, Preset, DelThis, DelAll};
+
+    BannerOverlayOptions bannerOptions;
+    bannerOptions.message = "Channel Message";
+    bannerOptions.optionsArrayPtr = optionsArray;
+    bannerOptions.optionsEnumPtr = optionsEnumArray;
+    bannerOptions.optionsCount = enumEnd;
+    bannerOptions.durationMs = 0;
+    bannerOptions.bannerCallback = [](int selected) -> void {
+        if (selected == SelectChannel) {
+            LOG_INFO("Channel message menu: Selected Select Channel, switching to channel picker menu");
+            menuHandler::menuQueue = menuHandler::channel_message_channel_picker;
+            screen->runNow();
+        } else if (selected == Preset) {
+            if (cannedMessageModule) {
+                uint8_t currentChannel = static_cast<uint8_t>(channelIndex);
+
+                cannedMessageModule->LaunchWithDestination(NODENUM_BROADCAST, currentChannel);
+            }
+        } else if (selected == DelThis) {
+            LOG_INFO("Channel DelThis: selected, checking chatHistoryStore");
+            if (chatHistoryStore) {
+                uint8_t currentChannel = static_cast<uint8_t>(channelIndex);
+                uint16_t currentPacketIndex = channelPacketBrowseIndex;
+                int msgCount = chatHistoryStore->getMeshPacketListSize(currentChannel);
+                LOG_INFO("Channel DelThis: currentChannel=%d, currentPacketIndex=%d, msgCount=%d", currentChannel,
+                         currentPacketIndex, msgCount);
+
+                LOG_INFO("Channel DelThis: Calling showConfirmationBanner");
+                menuHandler::showConfirmationBanner("Delete this message?", [currentChannel, currentPacketIndex]() -> void {
+                    // 保存删除前的索引
+                    uint16_t oldBrowseIndex = channelPacketBrowseIndex;
+                    LOG_INFO("Channel DelThis CONFIRM: before delete, channel=%d, packetIndex=%d, oldBrowseIndex=%d",
+                             currentChannel, currentPacketIndex, oldBrowseIndex);
+
+                    chatHistoryStore->deleteCurrentChannelMessage(currentChannel, currentPacketIndex);
+
+                    // 调整浏览索引
+                    int newMsgCount = chatHistoryStore->getMeshPacketListSize(currentChannel);
+                    LOG_INFO("Channel DelThis CONFIRM: after delete, newMsgCount=%d", newMsgCount);
+                    if (newMsgCount > 0) {
+                        if (currentPacketIndex < oldBrowseIndex) {
+                            // 删除的是当前浏览消息之前的消息，索引需要减1
+                            channelPacketBrowseIndex = oldBrowseIndex - 1;
+                        }
+                        // 如果 currentPacketIndex == oldBrowseIndex，索引保持不变
+                        // 如果 currentPacketIndex > oldBrowseIndex，索引保持不变
+
+                        // 确保索引在有效范围内
+                        if (channelPacketBrowseIndex >= newMsgCount) {
+                            channelPacketBrowseIndex = newMsgCount - 1;
+                        }
+                    } else {
+                        channelPacketBrowseIndex = 0;
+                    }
+
+                    LOG_INFO("Deleted message at index %d, oldBrowseIndex=%d, newBrowseIndex=%d, newMsgCount=%d",
+                             currentPacketIndex, oldBrowseIndex, channelPacketBrowseIndex, newMsgCount);
+
+                    screen->setFrames(graphics::Screen::FOCUS_PRESERVE);
+                });
+            }
+        } else if (selected == DelAll) {
+            LOG_INFO("Channel DelAll: selected, checking chatHistoryStore");
+            if (chatHistoryStore) {
+                uint8_t currentChannel = static_cast<uint8_t>(channelIndex);
+                int msgCount = chatHistoryStore->getMeshPacketListSize(currentChannel);
+                LOG_INFO("Channel DelAll: currentChannel=%d, msgCount=%d", currentChannel, msgCount);
+
+                char confirmMsg[64];
+                snprintf(confirmMsg, sizeof(confirmMsg), "Delete all messages\nfor this channel?");
+                LOG_INFO("Channel DelAll: Calling showConfirmationBanner");
+                menuHandler::showConfirmationBanner(confirmMsg, [currentChannel]() -> void {
+                    int msgCount = chatHistoryStore->getMeshPacketListSize(currentChannel);
+                    if (msgCount > 0) {
+                        chatHistoryStore->deleteAllChannelMessagesForChannel(currentChannel);
+                        channelPacketBrowseIndex = 0;
+                        screen->setFrames(graphics::Screen::FOCUS_PRESERVE);
+                    }
+                });
+            }
+        }
+    };
+    screen->showOverlayBanner(bannerOptions);
+#endif
+}
+
 void menuHandler::testMenu()
 {
 
@@ -2798,8 +3119,22 @@ void menuHandler::handleMenuSwitch(OLEDDisplay *display)
     case MessageBubblesMenu:
         messageBubblesMenu();
         break;
+#ifdef Nodara
+    case confirmation_dialog_menu:
+        LOG_INFO("handleMenuSwitch: Processing confirmation_dialog_menu");
+        showConfirmationBanner(pendingConfirmMessage, pendingConfirmCallback);
+        LOG_INFO("handleMenuSwitch: showConfirmationBanner called");
+        break;
+    case direct_message_node_picker:
+        directMessageNodePickerMenu();
+        break;
+    case channel_message_channel_picker:
+        channelHistoryMenu();
+        break;
+#endif
     }
     menuQueue = MenuNone;
+
 }
 
 void menuHandler::saveUIConfig()

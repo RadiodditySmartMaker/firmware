@@ -53,6 +53,12 @@ class XModemAdapter
     void resetForPhone();
 
   private:
+    enum class ReceiveTarget : uint8_t {
+        None,
+        Filesystem,
+        ExternalChineseFont,
+    };
+
     bool isReceiving = false;
     bool isTransmitting = false;
     bool isEOT = false;
@@ -68,6 +74,8 @@ class XModemAdapter
 #endif
 
     char filename[sizeof(meshtastic_XModem_buffer_t::bytes)] = {0};
+    ReceiveTarget receiveTarget = ReceiveTarget::None;
+    uint32_t receiveOffset = 0;
 
   protected:
     meshtastic_XModem xmodemStore = meshtastic_XModem_init_zero;

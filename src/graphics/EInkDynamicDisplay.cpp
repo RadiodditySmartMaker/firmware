@@ -49,8 +49,11 @@ void EInkDynamicDisplay::configForFastRefresh()
 {
     // Variant-specific code can go here
 #if defined(PRIVATE_HW)
-#else
+#if defined(Nodara)
+    adafruitDisplay->setPartialWindow(0, 0, adafruitDisplay->width(), adafruitDisplay->height());
+#endif
     // Otherwise:
+#else
     adafruitDisplay->setPartialWindow(0, 0, adafruitDisplay->width(), adafruitDisplay->height());
 #endif
 }
@@ -60,6 +63,9 @@ void EInkDynamicDisplay::configForFullRefresh()
 {
     // Variant-specific code can go here
 #if defined(PRIVATE_HW)
+#if defined(Nodara)
+    adafruitDisplay->setFullWindow();
+#endif
 #else
     // Otherwise:
     adafruitDisplay->setFullWindow();
@@ -128,7 +134,7 @@ void EInkDynamicDisplay::endOrDetach()
     else if (previousRefresh == FAST)
         EInkDisplay::endUpdate(); // Still block while updating, but EInkDisplay needs us to call endUpdate() ourselves.
 
-        // Fallback - If using an unmodified version of GxEPD2 for some reason
+    // Fallback - If using an unmodified version of GxEPD2 for some reason
 #else
     if (previousRefresh == FULL || previousRefresh == FAST) { // If refresh wasn't skipped (on unspecified..)
         LOG_WARN(
@@ -148,13 +154,11 @@ bool EInkDynamicDisplay::determineMode()
     checkBusyAsyncRefresh();
 #endif
     checkRateLimiting();
-
     // If too soon for a new frame, or display busy, abort early
-    if (refresh == SKIPPED)
+    if (refresh == SKIPPED) {
         return false; // No refresh
-
+    }
     // -- New frame is due --
-
     resetRateLimiting(); // Once determineMode() ends, will have to wait again
     hashImage();         // Generate here, so we can still copy it to previousImageHash, even if we skip the comparison check
     LOG_DEBUG("determineMode(): "); // Begin log entry

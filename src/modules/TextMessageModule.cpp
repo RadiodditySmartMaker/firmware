@@ -43,6 +43,14 @@ ProcessMessage TextMessageModule::handleReceived(const meshtastic_MeshPacket &mp
     // Notify any observers (e.g. external modules that care about packets)
     notifyObservers(&mp);
 
+#ifdef Nodara
+    if (chatHistoryStore) {
+        chatHistoryStore->saveMeshPacket(mp);
+        if (screen)
+            screen->handleChatHistoryUpdated(mp);
+    }
+#endif
+
     return ProcessMessage::CONTINUE; // Let others look at this message also if they want
 }
 

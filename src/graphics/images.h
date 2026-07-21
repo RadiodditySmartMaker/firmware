@@ -73,6 +73,19 @@ const unsigned char lightning_bolt_v[] PROGMEM = {0b00000100, 0b00000110, 0b0001
 
 #define mail_width 10
 #define mail_height 7
+
+#ifdef Nodara
+
+static const uint8_t icon_CH[] PROGMEM = {
+    0b10010110, 0b10011001, 0b11110001, 0b10010001, 0b10011001, 0b10010110, 0b00000000, 0b11111111,
+};
+
+static const uint8_t icon_DM[] PROGMEM = {
+    0b10001011, 0b11011101, 0b10101101, 0b10001101, 0b10001101, 0b10001011, 0b00000000, 0b11111111,
+};
+
+#endif
+
 static const unsigned char mail[] PROGMEM = {
     0b11111111, 0b00, // Top line
     0b10000001, 0b00, // Edges

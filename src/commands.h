@@ -14,5 +14,7 @@ enum class Cmd {
     STOP_BOOT_SCREEN,
     SHOW_PREV_FRAME,
     SHOW_NEXT_FRAME,
+    SHOW_PREV_PACKET,
+    SHOW_NEXT_PACKET,
     NOOP
 };

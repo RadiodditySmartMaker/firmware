@@ -55,7 +55,10 @@ class menuHandler
         NodeNameLengthMenu,
         FrameToggles,
         DisplayUnits,
-        MessageBubblesMenu
+        MessageBubblesMenu,
+        direct_message_node_picker,
+        channel_message_channel_picker,
+        confirmation_dialog_menu,
     };
     static screenMenus menuQueue;
     static uint32_t pickedNodeNum; // node selected by NodePicker for ManageNodeMenu
@@ -78,6 +81,7 @@ class menuHandler
     static void deleteMessagesMenu();
     static void homeBaseMenu();
     static void textMessageBaseMenu();
+    static void channelHistoryMenu();
     static void systemBaseMenu();
     static void favoriteBaseMenu();
     static void positionBaseMenu();
@@ -111,6 +115,9 @@ class menuHandler
     static void displayUnitsMenu();
     static void messageBubblesMenu();
     static void textMessageMenu();
+    static void directMessageNodePickerMenu();
+    static void directMessageActionMenu();
+    static void channelMessageActionMenu();
 
   private:
     static void saveUIConfig();

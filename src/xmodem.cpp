@@ -50,10 +50,17 @@
 
 #include "xmodem.h"
 #include "SPILock.h"
+#include "nodara/ExternalFlash.h"
+#include <cstring>
 
 #ifdef FSCom
 
 XModemAdapter xModem;
+
+namespace
+{
+constexpr const char *kExternalChineseFontTarget = CNFONT_CFG_TARGET_NAME;
+}
 
 XModemAdapter::XModemAdapter() {}
 
@@ -119,20 +126,37 @@ void XModemAdapter::handlePacket(meshtastic_XModem xmodemPacket)
     case meshtastic_XModem_Control_STX:
         if ((xmodemPacket.seq == 0) && !isReceiving && !isTransmitting) {
             // NULL packet has the destination filename
+            memset(filename, 0, sizeof(filename));
             memcpy(filename, &xmodemPacket.buffer.bytes, xmodemPacket.buffer.size);
 
             if (xmodemPacket.control == meshtastic_XModem_Control_SOH) { // Receive this file and put to Flash
-                spiLock->lock();
-                file = FSCom.open(filename, FILE_O_WRITE);
-                spiLock->unlock();
-                if (file) {
-                    sendControl(meshtastic_XModem_Control_ACK);
-                    isReceiving = true;
-                    packetno = 1;
-                    break;
+                if (strcmp(filename, kExternalChineseFontTarget) == 0) {
+                    if (nodara::ExtFlashBeginChineseFontUpload()) {
+                        sendControl(meshtastic_XModem_Control_ACK);
+                        isReceiving = true;
+                        packetno = 1;
+                        receiveTarget = ReceiveTarget::ExternalChineseFont;
+                        receiveOffset = 0;
+                        LOG_INFO("XModem: Receive external font image");
+                        break;
+                    }
+                } else {
+                    spiLock->lock();
+                    file = FSCom.open(filename, FILE_O_WRITE);
+                    spiLock->unlock();
+                    if (file) {
+                        sendControl(meshtastic_XModem_Control_ACK);
+                        isReceiving = true;
+                        packetno = 1;
+                        receiveTarget = ReceiveTarget::Filesystem;
+                        receiveOffset = 0;
+                        break;
+                    }
                 }
                 sendControl(meshtastic_XModem_Control_NAK);
                 isReceiving = false;
+                receiveTarget = ReceiveTarget::None;
+                receiveOffset = 0;
                 break;
             } else { // Transmit this file from Flash
                 LOG_INFO("XModem: Transmit file %s", filename);
@@ -142,6 +166,10 @@ void XModemAdapter::handlePacket(meshtastic_XModem xmodemPacket)
                 if (file) {
                     packetno = 1;
                     isTransmitting = true;
+                    isEOT = false;
+                    retrans = MAXRETRANS;
+                    receiveTarget = ReceiveTarget::None;
+                    receiveOffset = 0;
                     xmodemStore = meshtastic_XModem_init_zero;
                     xmodemStore.control = meshtastic_XModem_Control_SOH;
                     xmodemStore.seq = packetno;
@@ -167,9 +195,20 @@ void XModemAdapter::handlePacket(meshtastic_XModem xmodemPacket)
                 if ((xmodemPacket.seq == packetno) &&
                     check(xmodemPacket.buffer.bytes, xmodemPacket.buffer.size, xmodemPacket.crc16)) {
                     // valid packet
-                    spiLock->lock();
-                    file.write(xmodemPacket.buffer.bytes, xmodemPacket.buffer.size);
-                    spiLock->unlock();
+                    bool ok = false;
+                    if (receiveTarget == ReceiveTarget::ExternalChineseFont) {
+                        ok = nodara::ExtFlashWriteChineseFontUploadChunk(receiveOffset, xmodemPacket.buffer.bytes,
+                                                                                xmodemPacket.buffer.size);
+                    } else if (receiveTarget == ReceiveTarget::Filesystem) {
+                        spiLock->lock();
+                        ok = (file.write(xmodemPacket.buffer.bytes, xmodemPacket.buffer.size) == xmodemPacket.buffer.size);
+                        spiLock->unlock();
+                    }
+                    if (!ok) {
+                        sendControl(meshtastic_XModem_Control_NAK);
+                        break;
+                    }
+                    receiveOffset += xmodemPacket.buffer.size;
                     sendControl(meshtastic_XModem_Control_ACK);
                     packetno++;
                     break;
@@ -187,23 +226,43 @@ void XModemAdapter::handlePacket(meshtastic_XModem xmodemPacket)
         break;
     case meshtastic_XModem_Control_EOT:
         // End of transmission
+        if (receiveTarget == ReceiveTarget::ExternalChineseFont) {
+            if (!nodara::ExtFlashFinishChineseFontUpload(receiveOffset)) {
+                nodara::ExtFlashAbortChineseFontUpload();
+                sendControl(meshtastic_XModem_Control_CAN);
+                isReceiving = false;
+                receiveTarget = ReceiveTarget::None;
+                receiveOffset = 0;
+                LOG_WARN("XModem: External font image verify failed");
+                break;
+            }
+        } else {
+            spiLock->lock();
+            file.flush();
+            file.close();
+            spiLock->unlock();
+        }
         sendControl(meshtastic_XModem_Control_ACK);
-        spiLock->lock();
-        file.flush();
-        file.close();
-        spiLock->unlock();
         isReceiving = false;
+        receiveTarget = ReceiveTarget::None;
+        receiveOffset = 0;
         break;
     case meshtastic_XModem_Control_CAN:
         // Cancel transmission and remove file
         sendControl(meshtastic_XModem_Control_ACK);
-        spiLock->lock();
-        file.flush();
-        file.close();
+        if (receiveTarget == ReceiveTarget::ExternalChineseFont) {
+            nodara::ExtFlashAbortChineseFontUpload();
+        } else {
+            spiLock->lock();
+            file.flush();
+            file.close();
 
-        FSCom.remove(filename);
-        spiLock->unlock();
+            FSCom.remove(filename);
+            spiLock->unlock();
+        }
         isReceiving = false;
+        receiveTarget = ReceiveTarget::None;
+        receiveOffset = 0;
         break;
     case meshtastic_XModem_Control_ACK:
         // Acknowledge Send the next packet
