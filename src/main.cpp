@@ -856,6 +856,7 @@ void setup()
     chatHistoryStore = new ChatHistoryStore();
     chatHistoryStore->loadFromDisk();
 #endif
+#endif
     // TODO Remove magic string
     // setup TZ prior to time actions.
 #if !MESHTASTIC_EXCLUDE_TZ
