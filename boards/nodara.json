@@ -1,7 +1,7 @@
 {
   "build": {
     "arduino": {
-      "ldscript": "nrf52840_s140_v6.ld"
+      "ldscript": "nrf52840_s140_v6_nodara.ld"
     },
     "core": "nRF5",
     "cpu": "cortex-m4",
@@ -37,8 +37,8 @@
   "frameworks": ["arduino"],
   "name": "Nodara (Adafruit BSP)",
   "upload": {
-    "maximum_ram_size": 248832,
-    "maximum_size": 815104,
+    "maximum_ram_size": 237568,
+    "maximum_size": 802816,
     "speed": 115200,
     "protocol": "nrfutil",
     "protocols": ["jlink", "nrfjprog", "nrfutil", "stlink"],
