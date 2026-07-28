@@ -1,10 +1,18 @@
 #include "McuDataInput.h"
 
 #include "Arduino.h"
-#include "main.h"
 #include "MessageStore.h"
-#include "mesh/Throttle.h"
+#include "Nodara.h"
+#include "GpioteOverride.h"
+#include "SixKeyNavInput.h"
+#include "main.h"
 #include "mesh/NodeDB.h"
+#include "mesh/RadioInterface.h"
+#include "mesh/RadioLibInterface.h"
+#include "mesh/Throttle.h"
+#include "sleep.h"
+#include "target_specific.h"
+#include "freertosinc.h"
 
 #include <cstdio>
 #include <graphics/draw/UIRenderer.h>
@@ -32,9 +40,12 @@ constexpr const char *kMcuDataSerialConfigName = "8N1";
 #define MCU_DATA_SERIAL_ENABLED 0
 #endif
 
+#ifndef DELAY_FOREVER
+#define DELAY_FOREVER portMAX_DELAY
+#endif
+
 constexpr uint32_t kMcuDataBaud = MCU_DATA_BAUD;
 constexpr uint32_t kMcuDataFrameGapMs = 200;
-constexpr uint32_t kMcuDataPinLogIntervalMs = 1000;
 constexpr uint32_t kLedBlinkMs = 100;
 constexpr size_t kMcuDataMaxFrameSize = 32;
 constexpr uint8_t kMcuDataAddress = 0x01;
@@ -204,21 +215,6 @@ void blinkPowerOffLed(const uint8_t pin = PIN_LED2, const uint32_t blinkCount = 
     }
 #endif
 }
-
-void showPowerOffScreen()
-{
-#if HAS_SCREEN
-    if (!screen)
-        return;
-
-    screen->startAlert([](OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y) {
-        EINK_ADD_FRAMEFLAG(display, COSMETIC);
-        EINK_ADD_FRAMEFLAG(display, BLOCKING);
-        graphics::UIRenderer::drawIconScreen("Power Off", display, state, x, y);
-    });
-    screen->forceDisplay(true);
-#endif
-}
 } // namespace
 
 void McuDataInput::setup()
@@ -230,6 +226,8 @@ void McuDataInput::setup()
              static_cast<unsigned>(kMcuDataBaud), kMcuDataSerialConfigName);
 #endif
 }
+
+bool onPowerOn = false;
 
 void McuDataInput::processCompletedFrame()
 {
@@ -250,11 +248,13 @@ void McuDataInput::processCompletedFrame()
         break;
     case McuParsedCommand::PowerOnConfirm:
         handlePowerOnConfirm();
+        onPowerOn = true;
         break;
     case McuParsedCommand::ShutdownDelayed:
         handleCommand03();
         break;
     case McuParsedCommand::ShutdownNow:
+        onPowerOn = false;
         handleCommand05();
         break;
     }
@@ -263,6 +263,8 @@ void McuDataInput::processCompletedFrame()
 void McuDataInput::loop()
 {
 #if MCU_DATA_SERIAL_ENABLED
+    if (isExternalPowerOff())
+        return;
     readSerialIntoFrame();
     processCompletedFrame();
 #endif
@@ -289,18 +291,46 @@ void McuDataInput::handleCommand03()
 
 void McuDataInput::handleCommand05()
 {
-    LOG_INFO("MCU_DATA command 0x0005/0x0000 received");
-    screen->showSimpleBanner("Power Off...",
-                                 2250); // dismiss after 3 seconds to avoid the
-    blinkPowerOffLed(PIN_LED2, 4, kLedBlinkMs);
+    screen->showSimpleBanner("Power Off", 3000);
+    if (isExternalPowerOff())
+        return;
+
+    setExternalPowerOff(true);
+    LOG_INFO("MCU_DATA command 0x0005/0x0000 — external power-off quiesce");
+
     if (chatHistoryStore)
         chatHistoryStore->persistToDisk();
-
     if (nodeDB)
         nodeDB->saveToDisk();
+
+    if (sixKeyNavInput)
+        sixKeyNavInput->disable();
+    unregisterGpiotePortPin(PIN_BUTTON_LEFT);
+    unregisterGpiotePortPin(PIN_BUTTON_RIGHT);
+    unregisterGpiotePortPin(PIN_BUTTON_UP);
+    unregisterGpiotePortPin(PIN_BUTTON_DOWN);
+    unregisterGpiotePortPin(PIN_BUTTON_ENTER);
+    unregisterGpiotePortPin(PIN_BUTTON_FN);
+
+    if (RadioLibInterface::instance)
+        static_cast<RadioInterface *>(RadioLibInterface::instance)->disable();
+
+    setBluetoothEnable(false);
+    notifyDeepSleep.notifyObservers(NULL);
 #if HAS_SCREEN
     messageStore.saveToFlash();
+
+    if (screen) {
+        screen->startAlert([](OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y) {
+            EINK_ADD_FRAMEFLAG(display, COSMETIC);
+            EINK_ADD_FRAMEFLAG(display, BLOCKING);
+            graphics::UIRenderer::drawIconScreen("Power Off", display, state, x, y);
+        });
+        screen->forceDisplay(true);
+    }
 #endif
-    showPowerOffScreen();
+    blinkPowerOffLed(PIN_LED2, 4, kLedBlinkMs);
+
+    cpuDeepSleep(DELAY_FOREVER);
 }
 } // namespace nodara

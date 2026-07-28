@@ -23,6 +23,7 @@
 #include "wiring_constants.h"
 #include "wiring_digital.h"
 #include "nodara/GpioteOverride.h"
+#include "nodara/Nodara.h"
 
 const uint32_t g_ADigitalPinMap[] = {
     // P0 - pins 0 and 1 are hardwired for xtal and should never be enabled
@@ -67,8 +68,12 @@ void variant_shutdown()
     unregisterGpiotePortPin(PIN_BUTTON_RIGHT);
     unregisterGpiotePortPin(PIN_BUTTON_UP);
     unregisterGpiotePortPin(PIN_BUTTON_DOWN);
-    registerGpiotePortPin(PIN_BUTTON_ENTER);
     unregisterGpiotePortPin(PIN_BUTTON_FN);
+    // Sleep path keeps Enter as wake source; external MCU power-cut must not wake.
+    if (nodara::isExternalPowerOff())
+        unregisterGpiotePortPin(PIN_BUTTON_ENTER);
+    else
+        registerGpiotePortPin(PIN_BUTTON_ENTER);
 
     // Turn off all LEDs before deep sleep.
     digitalWrite(PIN_LED3, !LED_STATE_ON);
