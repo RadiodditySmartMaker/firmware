@@ -8,6 +8,13 @@
 #define CNFONT_EMBED_INTERNAL_TABLE 0
 #endif
 
+// Runtime must never rewrite QSPI unless explicitly enabled.
+// External font images are written only by the host upload path
+// (custom_upload_external_chinese_font in platformio.ini).
+#ifndef CNFONT_ALLOW_RUNTIME_EXT_REBUILD
+#define CNFONT_ALLOW_RUNTIME_EXT_REBUILD 0
+#endif
+
 namespace
 {
 static constexpr uint32_t kChineseFontMagic = CNFONT_CFG_MAGIC;
@@ -32,10 +39,10 @@ struct ChineseFontFileHeader {
 static bool gExternalFontTriedInit = false;
 static bool gExternalFontReady = false;
 static uint32_t gExternalFontCount = 0;
-static uint8_t *gExternalKeys = nullptr; // count * 4 bytes
+static uint8_t *gExternalKeys = nullptr; // count * key_size bytes
 static bool gExternalFontLoggedReady = false;
 static bool gExternalFontLoggedHit = false;
-static bool gExternalFontLoggedFallback = false;
+static bool gExternalFontLoggedMiss = false;
 
 static uint8_t utf8CharLength(uint8_t c)
 {
@@ -64,12 +71,9 @@ static void makeUtf8Key(const char *utf8, uint8_t out[kUtf8KeySize])
     }
 }
 
+#if CNFONT_ALLOW_RUNTIME_EXT_REBUILD && CNFONT_EMBED_INTERNAL_TABLE
 static bool exportChineseFontToExternal()
 {
-#if !CNFONT_EMBED_INTERNAL_TABLE
-    LOG_WARN("[CNFONT][EXT] embedded table disabled, skip export");
-    return false;
-#else
     ChineseFontFileHeader header = {kChineseFontMagic, kChineseFontVersion, chineseFontCount, 0};
     const uint32_t keyBytes = chineseFontCount * kUtf8KeySize;
     const uint32_t bitmapBytes = chineseFontCount * kBitmapSize;
@@ -120,8 +124,8 @@ static bool exportChineseFontToExternal()
     LOG_INFO("[CNFONT][EXT] exported count=%lu bytes=%lu base=0x%08lx", (unsigned long)chineseFontCount,
              (unsigned long)totalBytes, (unsigned long)kChineseFontBaseAddr);
     return true;
-#endif
 }
+#endif
 
 static bool ensureExternalChineseFont()
 {
@@ -140,17 +144,13 @@ static bool ensureExternalChineseFont()
         LOG_WARN("[CNFONT][EXT] read header failed");
         return false;
     }
+
     const bool headerBasicInvalid =
         (header.magic != kChineseFontMagic || header.version != kChineseFontVersion || header.count == 0);
-#if CNFONT_EMBED_INTERNAL_TABLE
-    const bool headerCountMismatch = (header.count != chineseFontCount);
-#else
-    const bool headerCountMismatch = false;
-#endif
 
-    if (headerBasicInvalid || headerCountMismatch) {
-#if CNFONT_EMBED_INTERNAL_TABLE
-        LOG_INFO("[CNFONT][EXT] header mismatch, try rebuild (magic=0x%08lx ver=%lu count=%lu)", (unsigned long)header.magic,
+    if (headerBasicInvalid) {
+#if CNFONT_ALLOW_RUNTIME_EXT_REBUILD && CNFONT_EMBED_INTERNAL_TABLE
+        LOG_INFO("[CNFONT][EXT] invalid header, try rebuild (magic=0x%08lx ver=%lu count=%lu)", (unsigned long)header.magic,
                  (unsigned long)header.version, (unsigned long)header.count);
         if (!exportChineseFontToExternal()) {
             LOG_WARN("[CNFONT][EXT] rebuild failed");
@@ -161,13 +161,14 @@ static bool ensureExternalChineseFont()
             return false;
         }
 #else
-        LOG_WARN("[CNFONT][EXT] invalid external header and embedded table disabled");
+        LOG_WARN("[CNFONT][EXT] invalid external header (magic=0x%08lx ver=%lu count=%lu); not rewriting QSPI",
+                 (unsigned long)header.magic, (unsigned long)header.version, (unsigned long)header.count);
         return false;
 #endif
     }
 
     if (header.magic != kChineseFontMagic || header.version != kChineseFontVersion || header.count == 0) {
-        LOG_WARN("[CNFONT][EXT] invalid header after rebuild");
+        LOG_WARN("[CNFONT][EXT] invalid header after init");
         return false;
     }
 
@@ -225,6 +226,19 @@ static bool lookupExternalChineseBitmap(const char *utf8, uint8_t outBitmap[kBit
     return nodara::ExtFlashRawRead(kChineseFontBaseAddr + bitmapOffset, outBitmap, kBitmapSize);
 }
 
+#if CNFONT_EMBED_INTERNAL_TABLE
+static bool lookupInternalChineseBitmap(const char *utf8, const uint8_t *&outBitmap)
+{
+    for (unsigned int i = 0; i < chineseFontCount; i++) {
+        if (strcmp(chineseFont[i].utf8, utf8) == 0) {
+            outBitmap = chineseFont[i].bitmap;
+            return true;
+        }
+    }
+    return false;
+}
+#endif
+
 static void drawGlyphBitmap(OLEDDisplay *display, int16_t x, int16_t y, const uint8_t *bitmap)
 {
     for (uint32_t row = 0; row < kGlyphHeight; ++row) {
@@ -232,16 +246,25 @@ static void drawGlyphBitmap(OLEDDisplay *display, int16_t x, int16_t y, const ui
             const uint32_t byteIndex = row * kBytesPerRow + (col / 8U);
             const uint32_t bitIndex = 7U - (col % 8U);
             if (bitmap[byteIndex] & (1U << bitIndex)) {
-                display->setPixel(x + static_cast<int16_t>(col), y + static_cast<int16_t>(row) + 0);
+                display->setPixel(x + static_cast<int16_t>(col), y + static_cast<int16_t>(row) + kGlyphYOffset);
             }
         }
     }
 }
 } // namespace
 
-// 返回值：true = 找到并绘制了对应汉字；false = 未找到（调用方可做降级处理）
+// Lookup order: internal table first, then external QSPI. Never rewrite QSPI at runtime
+// unless CNFONT_ALLOW_RUNTIME_EXT_REBUILD=1 (default off).
 bool drawChineseChar(OLEDDisplay *display, int16_t x, int16_t y, const char *utf8)
 {
+#if CNFONT_EMBED_INTERNAL_TABLE
+    const uint8_t *internalBitmap = nullptr;
+    if (lookupInternalChineseBitmap(utf8, internalBitmap)) {
+        drawGlyphBitmap(display, x, y, internalBitmap);
+        return true;
+    }
+#endif
+
     uint8_t externalBitmap[kBitmapSize];
     if (lookupExternalChineseBitmap(utf8, externalBitmap)) {
         if (!gExternalFontLoggedHit) {
@@ -252,20 +275,10 @@ bool drawChineseChar(OLEDDisplay *display, int16_t x, int16_t y, const char *utf
         return true;
     }
 
-    if (!gExternalFontLoggedFallback) {
-        LOG_WARN("[CNFONT][EXT] fallback to internal glyph table");
-        gExternalFontLoggedFallback = true;
+    if (!gExternalFontLoggedMiss) {
+        LOG_WARN("[CNFONT] glyph not found in internal/external tables");
+        gExternalFontLoggedMiss = true;
     }
-
-#if CNFONT_EMBED_INTERNAL_TABLE
-    for (unsigned int i = 0; i < chineseFontCount; i++) {
-        if (strcmp(chineseFont[i].utf8, utf8) == 0) {
-            drawGlyphBitmap(display, x, y, chineseFont[i].bitmap);
-            return true;
-        }
-    }
-#endif
-
     return false;
 }
 
@@ -278,7 +291,6 @@ void drawChineseStringWithLineBreak(OLEDDisplay *display, int16_t x, int16_t y, 
     int16_t screenWidth = display->getWidth();
 
     while (str[offset]) {
-        // 检查换行符
         if (str[offset] == '\n') {
             currentX = x;
             currentY += lineHeight;
@@ -286,7 +298,6 @@ void drawChineseStringWithLineBreak(OLEDDisplay *display, int16_t x, int16_t y, 
             continue;
         }
 
-        // 检查是否超出屏幕宽度
         if (currentX >= screenWidth) {
             currentX = x;
             currentY += lineHeight;
@@ -294,7 +305,7 @@ void drawChineseStringWithLineBreak(OLEDDisplay *display, int16_t x, int16_t y, 
 
         unsigned char c = static_cast<unsigned char>(str[offset]);
 
-        // 1 字节 ASCII
+        // 1-byte ASCII uses the OLED Latin font.
         if (c < 0x80) {
             char buf[2] = {static_cast<char>(c), 0};
 
@@ -308,7 +319,7 @@ void drawChineseStringWithLineBreak(OLEDDisplay *display, int16_t x, int16_t y, 
             currentX += w;
             offset += 1;
         }
-        // 多字节 UTF-8：先尝试外部/内置点阵字库，命中后按一个 16x16 字符绘制。
+        // Multi-byte UTF-8: internal glyph table, then external QSPI.
         else {
             const uint8_t charLen = utf8CharLength(c);
             char buf[5] = {0};

@@ -249,6 +249,13 @@ def normalize_serial_port(port):
 
 
 def should_auto_upload_chinese_font():
+    """Host-side QSPI font upload after `pio upload`.
+
+    Independent of CNFONT_EMBED_INTERNAL_TABLE:
+      - custom_upload_external_chinese_font=true  -> generate+upload external font bin
+      - custom_upload_external_chinese_font=false -> do not touch device QSPI from the host
+    Firmware runtime does not rewrite QSPI unless CNFONT_ALLOW_RUNTIME_EXT_REBUILD=1.
+    """
     val = env.GetProjectOption("custom_upload_external_chinese_font", None)
     if val is None:
         return False
@@ -256,10 +263,7 @@ def should_auto_upload_chinese_font():
     if platform.name != "nordicnrf52":
         return False
 
-    if not has_cpp_define(env, "CNFONT_EMBED_INTERNAL_TABLE", 0):
-        return False
-
-    return get_project_option_safe("custom_upload_external_chinese_font", "true").lower() == "true"
+    return str(val).strip().lower() == "true"
 
 
 def append_optional_arg(cmd, option_name, option_value):

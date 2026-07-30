@@ -12,6 +12,10 @@ typedef struct
 #define CNFONT_EMBED_INTERNAL_TABLE 0
 #endif
 
+#ifndef CNFONT_ALLOW_RUNTIME_EXT_REBUILD
+#define CNFONT_ALLOW_RUNTIME_EXT_REBUILD 0
+#endif
+
 #if CNFONT_EMBED_INTERNAL_TABLE
 extern const ChineseFont chineseFont[];
 #endif
