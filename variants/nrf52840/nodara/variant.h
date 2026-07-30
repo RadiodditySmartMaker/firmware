@@ -130,7 +130,7 @@ static const uint8_t A0 = PIN_BATTERY_ADC;
 #endif
 
 // On-board QSPI Flash
-#define EXTERNAL_FLASH_DEVICES GD25Q32C
+#define EXTERNAL_FLASH_DEVICES P25Q32
 #define EXTERNAL_FLASH_USE_QSPI     // Disabled for power comparison test
 
 // ===========================================================================
