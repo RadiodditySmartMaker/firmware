@@ -41,8 +41,8 @@ void initVariant()
     pinMode(PIN_LED2, OUTPUT);
     digitalWrite(PIN_LED2, !LED_STATE_ON);
 
-    pinMode(PIN_LED1, OUTPUT);
-    digitalWrite(PIN_LED1, !LED_STATE_ON);
+    // pinMode(PIN_LED1, OUTPUT);
+    // digitalWrite(PIN_LED1, !LED_STATE_ON);
 
     pinMode(PIN_QSPI_CS, OUTPUT);
     digitalWrite(PIN_QSPI_CS, HIGH);
@@ -78,7 +78,7 @@ void variant_shutdown()
     // Turn off all LEDs before deep sleep.
     digitalWrite(PIN_LED3, !LED_STATE_ON);
     digitalWrite(PIN_LED2, !LED_STATE_ON);
-    digitalWrite(PIN_LED1, !LED_STATE_ON);
+    // digitalWrite(PIN_LED1, !LED_STATE_ON);
 
 #if defined(PIN_EINK_POWER)
     pinMode(PIN_EINK_DC, INPUT);

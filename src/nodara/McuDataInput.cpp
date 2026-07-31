@@ -46,7 +46,7 @@ constexpr const char *kMcuDataSerialConfigName = "8N1";
 
 constexpr uint32_t kMcuDataBaud = MCU_DATA_BAUD;
 constexpr uint32_t kMcuDataFrameGapMs = 200;
-constexpr uint32_t kLedBlinkMs = 100;
+constexpr uint32_t kLedBlinkMs = 50;
 constexpr size_t kMcuDataMaxFrameSize = 32;
 constexpr uint8_t kMcuDataAddress = 0x01;
 constexpr uint16_t kMcuDataRegister = 0x1000;
@@ -279,14 +279,14 @@ void McuDataInput::handlePowerOnConfirm()
 
     powerOnConfirmed = true;
     LOG_INFO("MCU_DATA power-on confirmed (0x0005/0x0001)");
-    blinkPowerOffLed(PIN_LED2, 4, kLedBlinkMs);
+    // blinkPowerOffLed(PIN_LED2, 4, kLedBlinkMs);
 }
 
 void McuDataInput::handleCommand03()
 {
     LOG_INFO("MCU_DATA command 0x0003 received");
     shutdownAtMsec = millis() + DEFAULT_SHUTDOWN_SECONDS * 1000;
-    blinkPowerOffLed(PIN_LED2, 4, kLedBlinkMs);
+    // blinkPowerOffLed(PIN_LED2, 4, kLedBlinkMs);
 }
 
 void McuDataInput::handleCommand05()
@@ -329,7 +329,6 @@ void McuDataInput::handleCommand05()
         screen->forceDisplay(true);
     }
 #endif
-    blinkPowerOffLed(PIN_LED2, 4, kLedBlinkMs);
 
     cpuDeepSleep(DELAY_FOREVER);
 }

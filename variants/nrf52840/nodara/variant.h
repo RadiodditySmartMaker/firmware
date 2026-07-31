@@ -58,7 +58,7 @@ extern "C" {
 // ===========================================================================
 // LEDs  (GPIO_ACTIVE_LOW, LED_STATE_ON = 0)
 // ===========================================================================
-#define PIN_LED1        (32 + 3)    // P1.03 red
+//#define PIN_LED1        (32 + 3)    // P1.03 red
 #define PIN_LED2        (14 + 0)    // P0.14 green
 #define PIN_LED3        (32 + 1)    // P1.01 blue
 
@@ -303,7 +303,7 @@ static const uint8_t A0 = PIN_BATTERY_ADC;
 #define LED_PAIRING     PIN_LED3        // blue: BLE pairing / connected
 
 // Legacy Bluefruit color aliases (do not match physical LED colors)
-#define LED_RED         PIN_LED1
+// #define LED_RED         PIN_LED1
 #define LED_BLUE        PIN_LED3
 #define LED_GREEN       PIN_LED2
 #define LED_CONN        LED_PAIRING

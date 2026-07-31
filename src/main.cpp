@@ -316,7 +316,7 @@ void setup()
 
     // initialize power HAL layer as early as possible
     powerHAL_init();
-
+#ifndef Nodara
 #ifdef LED_POWER
     pinMode(LED_POWER, OUTPUT);
     digitalWrite(LED_POWER, LED_STATE_ON);
@@ -328,6 +328,7 @@ void setup()
 
     // Defined in variant.cpp for early init code
     earlyInitVariant();
+#endif
 
 #if defined(PIN_POWER_EN)
     pinMode(PIN_POWER_EN, OUTPUT);

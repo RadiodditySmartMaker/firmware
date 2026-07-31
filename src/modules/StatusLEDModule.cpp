@@ -44,15 +44,6 @@ int StatusLEDModule::handleStatusUpdate(const meshtastic::Status *arg)
 {
     switch (arg->getStatusType()) {
     case STATUS_TYPE_POWER: {
-#ifdef Nodara
-        if (powerStatus->getHasUSB() || powerStatus->getIsCharging()) {
-            power_state = (powerStatus->getBatteryChargePercent() >= 100) ? charged : charging;
-        } else if (powerStatus->getBatteryChargePercent() > 5) {
-            power_state = discharging;
-        } else {
-            power_state = critical;
-        }
-#else
         if (powerStatus->getHasUSB() || powerStatus->getIsCharging()) {
             power_state = charging;
             if (powerStatus->getBatteryChargePercent() >= 100) {
@@ -65,7 +56,6 @@ int StatusLEDModule::handleStatusUpdate(const meshtastic::Status *arg)
                 power_state = critical;
             }
         }
-#endif
         break;
     }
     case STATUS_TYPE_BLUETOOTH: {
@@ -81,9 +71,6 @@ int StatusLEDModule::handleStatusUpdate(const meshtastic::Status *arg)
             PAIRING_LED_state = LED_STATE_ON;
             setInterval(0);
             runASAP = true;
-#ifdef Nodara
-            digitalWrite(LED_PAIRING, LED_STATE_ON);
-#endif
             break;
         }
         case meshtastic::BluetoothStatus::ConnectionState::CONNECTED: {
