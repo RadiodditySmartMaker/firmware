@@ -828,12 +828,6 @@ int32_t Screen::runOnce()
     if (displayHeight == 0) {
         displayHeight = dispdev->getHeight();
     }
-#if defined(Nodara)
-    // Prevent sleep and drive redraws while the first frame is active
-    if (showingNormalScreen && ui->getUiState()->currentFrame == 0) {
-        powerFSM.trigger(EVENT_PRESS); // reset sleep watchdog
-    }
-#endif // Nodara
 
     // Detect frame transitions and clear message cache when leaving text message screen
     {
