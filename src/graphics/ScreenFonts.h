@@ -1,7 +1,6 @@
 #pragma once
 #include "graphics/draw/DrawChineseFont.h"
-#include "graphics/fonts/OLEDDisplayFontsAR.h"
-// #include "graphics/fonts/chinese_test_font_16.h"
+#include "graphics/fonts/OLEDDisplayFontsDL.h"
 #ifdef OLED_PL
 #include "graphics/fonts/OLEDDisplayFontsPL.h"
 #endif
@@ -113,9 +112,9 @@
 #undef FONT_SMALL
 #undef FONT_MEDIUM
 #undef FONT_LARGE
-#define FONT_SMALL Arimo_Regular_14
-#define FONT_MEDIUM Arimo_Regular_16
-#define FONT_LARGE Arimo_Regular_16
+#define FONT_SMALL Dialog_plain_12
+#define FONT_MEDIUM Dialog_plain_12
+#define FONT_LARGE Dialog_plain_16
 
 #endif
 

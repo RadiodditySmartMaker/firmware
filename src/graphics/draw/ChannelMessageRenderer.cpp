@@ -9,7 +9,7 @@
 #include "graphics/TimeFormatters.h"
 #include "graphics/draw/DrawChineseFont.h"
 #include "graphics/draw/UIRenderer.h"
-#include "graphics/fonts/OLEDDisplayFontsAR.h"
+#include "graphics/fonts/OLEDDisplayFontsDL.h"
 #include "main.h"
 #define MAX_VALID_CHANNELS 8
 int validChannelIndices[MAX_VALID_CHANNELS];
