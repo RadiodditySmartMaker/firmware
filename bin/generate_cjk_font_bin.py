@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate an external Chinese font binary image from a C++ font table.
+Generate an external CJK font binary image from a C++ font table.
 
 Output layout:
   uint32 magic
@@ -11,10 +11,10 @@ Output layout:
   uint8  bitmap_table[count][bitmap_size]
 
 Examples:
-  python3 bin/generate_chinese_font_bin.py
-  python3 bin/generate_chinese_font_bin.py --output /tmp/chinese_font.bin
-  python3 bin/generate_chinese_font_bin.py --input src/graphics/fonts/ChineseFontData.cpp --output bin/chinese_font.bin
-  python3 bin/generate_chinese_font_bin.py --input src/graphics/fonts/CN_Font_10.cpp --font-type-name CN_Font_10 --font-array-name cnFont10 --glyph-width 10 --glyph-height 10 --bitmap-size 20 --output bin/cn_font_10.bin
+  python3 bin/generate_cjk_font_bin.py
+  python3 bin/generate_cjk_font_bin.py --output /tmp/cjk_font.bin
+  python3 bin/generate_cjk_font_bin.py --input src/graphics/fonts/CjkFontData.cpp --output bin/cjk_font.bin
+  python3 bin/generate_cjk_font_bin.py --input src/graphics/fonts/CN_Font_10.cpp --font-type-name CN_Font_10 --font-array-name cnFont10 --glyph-width 10 --glyph-height 10 --bitmap-size 20 --output bin/cn_font_10.bin
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import struct
 from pathlib import Path
 
 
-MAGIC = 0x43484631  # "CHF1"
+MAGIC = 0x434A4B31  # "CJK1"
 VERSION = 1
 KEY_SIZE = 4
 BITMAP_SIZE = 32
@@ -112,22 +112,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate an external font binary image from a C++ font table")
     parser.add_argument(
         "--input",
-        default="src/graphics/fonts/ChineseFontData.cpp",
+        default="src/graphics/fonts/CjkFontData.cpp",
         help="Path to the source .cpp font table",
     )
     parser.add_argument(
         "--output",
-        default="bin/chinese_font.bin",
+        default="bin/cjk_font.bin",
         help="Output path for generated binary",
     )
     parser.add_argument(
         "--font-type-name",
-        default="ChineseFont",
+        default="CjkFont",
         help="C++ struct/type name used by the font table",
     )
     parser.add_argument(
         "--font-array-name",
-        default="chineseFont",
+        default="cjkFont",
         help="C++ array name that contains the font table",
     )
     parser.add_argument(
@@ -158,7 +158,7 @@ def main() -> int:
         "--magic",
         type=parse_int_auto,
         default=MAGIC,
-        help="Image magic value, accepts decimal or hex (for example 0x43484631)",
+        help="Image magic value, accepts decimal or hex (for example 0x434A4B31)",
     )
     parser.add_argument(
         "--version",

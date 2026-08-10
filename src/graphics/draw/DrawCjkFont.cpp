@@ -1,35 +1,35 @@
-#include "DrawChineseFont.h"
+#include "DrawCjkFont.h"
 #include "DebugConfiguration.h"
 #include "nodara/ExternalFlash.h"
 #include <new>
 #include <string.h>
 
-#ifndef CNFONT_EMBED_INTERNAL_TABLE
-#define CNFONT_EMBED_INTERNAL_TABLE 0
+#ifndef CJKFONT_EMBED_INTERNAL_TABLE
+#define CJKFONT_EMBED_INTERNAL_TABLE 0
 #endif
 
 // Runtime must never rewrite QSPI unless explicitly enabled.
 // External font images are written only by the host upload path
-// (custom_upload_external_chinese_font in platformio.ini).
-#ifndef CNFONT_ALLOW_RUNTIME_EXT_REBUILD
-#define CNFONT_ALLOW_RUNTIME_EXT_REBUILD 0
+// (custom_upload_external_cjk_font in platformio.ini).
+#ifndef CJKFONT_ALLOW_RUNTIME_EXT_REBUILD
+#define CJKFONT_ALLOW_RUNTIME_EXT_REBUILD 0
 #endif
 
 namespace
 {
-static constexpr uint32_t kChineseFontMagic = CNFONT_CFG_MAGIC;
-static constexpr uint32_t kChineseFontVersion = CNFONT_CFG_VERSION;
-static constexpr uint32_t kChineseFontBaseAddr = CNFONT_CFG_EXT_ADDR;
-static constexpr uint32_t kChineseFontMaxBytes = CNFONT_CFG_MAX_BYTES;
-static constexpr uint32_t kUtf8KeySize = CNFONT_CFG_KEY_SIZE;
-static constexpr uint32_t kBitmapSize = CNFONT_CFG_BITMAP_SIZE;
-static constexpr uint32_t kGlyphWidth = CNFONT_CFG_GLYPH_WIDTH;
-static constexpr uint32_t kGlyphHeight = CNFONT_CFG_GLYPH_HEIGHT;
+static constexpr uint32_t kCjkFontMagic = CJKFONT_CFG_MAGIC;
+static constexpr uint32_t kCjkFontVersion = CJKFONT_CFG_VERSION;
+static constexpr uint32_t kCjkFontBaseAddr = CJKFONT_CFG_EXT_ADDR;
+static constexpr uint32_t kCjkFontMaxBytes = CJKFONT_CFG_MAX_BYTES;
+static constexpr uint32_t kUtf8KeySize = CJKFONT_CFG_KEY_SIZE;
+static constexpr uint32_t kBitmapSize = CJKFONT_CFG_BITMAP_SIZE;
+static constexpr uint32_t kGlyphWidth = CJKFONT_CFG_GLYPH_WIDTH;
+static constexpr uint32_t kGlyphHeight = CJKFONT_CFG_GLYPH_HEIGHT;
 static constexpr uint32_t kBytesPerRow = (kGlyphWidth + 7U) / 8U;
-static constexpr int16_t kLineHeight = CNFONT_CFG_LINE_HEIGHT;
-static constexpr int16_t kGlyphYOffset = CNFONT_CFG_Y_OFFSET;
+static constexpr int16_t kLineHeight = CJKFONT_CFG_LINE_HEIGHT;
+static constexpr int16_t kGlyphYOffset = CJKFONT_CFG_Y_OFFSET;
 
-struct ChineseFontFileHeader {
+struct CjkFontFileHeader {
     uint32_t magic;
     uint32_t version;
     uint32_t count;
@@ -71,63 +71,63 @@ static void makeUtf8Key(const char *utf8, uint8_t out[kUtf8KeySize])
     }
 }
 
-#if CNFONT_ALLOW_RUNTIME_EXT_REBUILD && CNFONT_EMBED_INTERNAL_TABLE
-static bool exportChineseFontToExternal()
+#if CJKFONT_ALLOW_RUNTIME_EXT_REBUILD && CJKFONT_EMBED_INTERNAL_TABLE
+static bool exportCjkFontToExternal()
 {
-    ChineseFontFileHeader header = {kChineseFontMagic, kChineseFontVersion, chineseFontCount, 0};
-    const uint32_t keyBytes = chineseFontCount * kUtf8KeySize;
-    const uint32_t bitmapBytes = chineseFontCount * kBitmapSize;
+    CjkFontFileHeader header = {kCjkFontMagic, kCjkFontVersion, cjkFontCount, 0};
+    const uint32_t keyBytes = cjkFontCount * kUtf8KeySize;
+    const uint32_t bitmapBytes = cjkFontCount * kBitmapSize;
     const uint32_t totalBytes = sizeof(header) + keyBytes + bitmapBytes;
-    if (totalBytes > kChineseFontMaxBytes) {
-        LOG_WARN("[CNFONT][EXT] layout too large: need=%lu limit=%lu", (unsigned long)totalBytes,
-                 (unsigned long)kChineseFontMaxBytes);
+    if (totalBytes > kCjkFontMaxBytes) {
+        LOG_WARN("[CJKFONT][EXT] layout too large: need=%lu limit=%lu", (unsigned long)totalBytes,
+                 (unsigned long)kCjkFontMaxBytes);
         return false;
     }
 
-    if (!nodara::ExtFlashRawErase(kChineseFontBaseAddr, totalBytes)) {
-        LOG_WARN("[CNFONT][EXT] erase failed base=0x%08lx len=%lu", (unsigned long)kChineseFontBaseAddr,
+    if (!nodara::ExtFlashRawErase(kCjkFontBaseAddr, totalBytes)) {
+        LOG_WARN("[CJKFONT][EXT] erase failed base=0x%08lx len=%lu", (unsigned long)kCjkFontBaseAddr,
                  (unsigned long)totalBytes);
         return false;
     }
 
-    if (!nodara::ExtFlashRawWrite(kChineseFontBaseAddr, &header, sizeof(header))) {
-        LOG_WARN("[CNFONT][EXT] write header failed");
+    if (!nodara::ExtFlashRawWrite(kCjkFontBaseAddr, &header, sizeof(header))) {
+        LOG_WARN("[CJKFONT][EXT] write header failed");
         return false;
     }
 
     uint8_t *keyTable = new (std::nothrow) uint8_t[keyBytes];
     if (!keyTable) {
-        LOG_WARN("[CNFONT][EXT] alloc key table failed: %lu bytes", (unsigned long)keyBytes);
+        LOG_WARN("[CJKFONT][EXT] alloc key table failed: %lu bytes", (unsigned long)keyBytes);
         return false;
     }
 
-    for (uint32_t i = 0; i < chineseFontCount; ++i) {
-        makeUtf8Key(chineseFont[i].utf8, keyTable + i * kUtf8KeySize);
+    for (uint32_t i = 0; i < cjkFontCount; ++i) {
+        makeUtf8Key(cjkFont[i].utf8, keyTable + i * kUtf8KeySize);
     }
 
-    if (!nodara::ExtFlashRawWrite(kChineseFontBaseAddr + sizeof(header), keyTable, keyBytes)) {
+    if (!nodara::ExtFlashRawWrite(kCjkFontBaseAddr + sizeof(header), keyTable, keyBytes)) {
         delete[] keyTable;
-        LOG_WARN("[CNFONT][EXT] write key table failed");
+        LOG_WARN("[CJKFONT][EXT] write key table failed");
         return false;
     }
     delete[] keyTable;
 
-    uint32_t bitmapAddr = kChineseFontBaseAddr + sizeof(header) + keyBytes;
-    for (uint32_t i = 0; i < chineseFontCount; ++i) {
-        if (!nodara::ExtFlashRawWrite(bitmapAddr, chineseFont[i].bitmap, kBitmapSize)) {
-            LOG_WARN("[CNFONT][EXT] write bitmap failed at index=%lu", (unsigned long)i);
+    uint32_t bitmapAddr = kCjkFontBaseAddr + sizeof(header) + keyBytes;
+    for (uint32_t i = 0; i < cjkFontCount; ++i) {
+        if (!nodara::ExtFlashRawWrite(bitmapAddr, cjkFont[i].bitmap, kBitmapSize)) {
+            LOG_WARN("[CJKFONT][EXT] write bitmap failed at index=%lu", (unsigned long)i);
             return false;
         }
         bitmapAddr += kBitmapSize;
     }
 
-    LOG_INFO("[CNFONT][EXT] exported count=%lu bytes=%lu base=0x%08lx", (unsigned long)chineseFontCount,
-             (unsigned long)totalBytes, (unsigned long)kChineseFontBaseAddr);
+    LOG_INFO("[CJKFONT][EXT] exported count=%lu bytes=%lu base=0x%08lx", (unsigned long)cjkFontCount,
+             (unsigned long)totalBytes, (unsigned long)kCjkFontBaseAddr);
     return true;
 }
 #endif
 
-static bool ensureExternalChineseFont()
+static bool ensureExternalCjkFont()
 {
     if (gExternalFontTriedInit) {
         return gExternalFontReady;
@@ -135,75 +135,75 @@ static bool ensureExternalChineseFont()
     gExternalFontTriedInit = true;
 
     if (!nodara::ExtFlashRawReady()) {
-        LOG_WARN("[CNFONT][EXT] raw flash not ready");
+        LOG_WARN("[CJKFONT][EXT] raw flash not ready");
         return false;
     }
 
-    ChineseFontFileHeader header;
-    if (!nodara::ExtFlashRawRead(kChineseFontBaseAddr, &header, sizeof(header))) {
-        LOG_WARN("[CNFONT][EXT] read header failed");
+    CjkFontFileHeader header;
+    if (!nodara::ExtFlashRawRead(kCjkFontBaseAddr, &header, sizeof(header))) {
+        LOG_WARN("[CJKFONT][EXT] read header failed");
         return false;
     }
 
     const bool headerBasicInvalid =
-        (header.magic != kChineseFontMagic || header.version != kChineseFontVersion || header.count == 0);
+        (header.magic != kCjkFontMagic || header.version != kCjkFontVersion || header.count == 0);
 
     if (headerBasicInvalid) {
-#if CNFONT_ALLOW_RUNTIME_EXT_REBUILD && CNFONT_EMBED_INTERNAL_TABLE
-        LOG_INFO("[CNFONT][EXT] invalid header, try rebuild (magic=0x%08lx ver=%lu count=%lu)", (unsigned long)header.magic,
+#if CJKFONT_ALLOW_RUNTIME_EXT_REBUILD && CJKFONT_EMBED_INTERNAL_TABLE
+        LOG_INFO("[CJKFONT][EXT] invalid header, try rebuild (magic=0x%08lx ver=%lu count=%lu)", (unsigned long)header.magic,
                  (unsigned long)header.version, (unsigned long)header.count);
-        if (!exportChineseFontToExternal()) {
-            LOG_WARN("[CNFONT][EXT] rebuild failed");
+        if (!exportCjkFontToExternal()) {
+            LOG_WARN("[CJKFONT][EXT] rebuild failed");
             return false;
         }
-        if (!nodara::ExtFlashRawRead(kChineseFontBaseAddr, &header, sizeof(header))) {
-            LOG_WARN("[CNFONT][EXT] read header after rebuild failed");
+        if (!nodara::ExtFlashRawRead(kCjkFontBaseAddr, &header, sizeof(header))) {
+            LOG_WARN("[CJKFONT][EXT] read header after rebuild failed");
             return false;
         }
 #else
-        LOG_WARN("[CNFONT][EXT] invalid external header (magic=0x%08lx ver=%lu count=%lu); not rewriting QSPI",
+        LOG_WARN("[CJKFONT][EXT] invalid external header (magic=0x%08lx ver=%lu count=%lu); not rewriting QSPI",
                  (unsigned long)header.magic, (unsigned long)header.version, (unsigned long)header.count);
         return false;
 #endif
     }
 
-    if (header.magic != kChineseFontMagic || header.version != kChineseFontVersion || header.count == 0) {
-        LOG_WARN("[CNFONT][EXT] invalid header after init");
+    if (header.magic != kCjkFontMagic || header.version != kCjkFontVersion || header.count == 0) {
+        LOG_WARN("[CJKFONT][EXT] invalid header after init");
         return false;
     }
 
     const uint32_t keyBytes = header.count * kUtf8KeySize;
-    if ((sizeof(header) + keyBytes + header.count * kBitmapSize) > kChineseFontMaxBytes) {
-        LOG_WARN("[CNFONT][EXT] invalid size after header check");
+    if ((sizeof(header) + keyBytes + header.count * kBitmapSize) > kCjkFontMaxBytes) {
+        LOG_WARN("[CJKFONT][EXT] invalid size after header check");
         return false;
     }
 
     gExternalKeys = new (std::nothrow) uint8_t[keyBytes];
     if (!gExternalKeys) {
-        LOG_WARN("[CNFONT][EXT] alloc runtime key table failed: %lu bytes", (unsigned long)keyBytes);
+        LOG_WARN("[CJKFONT][EXT] alloc runtime key table failed: %lu bytes", (unsigned long)keyBytes);
         return false;
     }
 
-    if (!nodara::ExtFlashRawRead(kChineseFontBaseAddr + sizeof(header), gExternalKeys, keyBytes)) {
+    if (!nodara::ExtFlashRawRead(kCjkFontBaseAddr + sizeof(header), gExternalKeys, keyBytes)) {
         delete[] gExternalKeys;
         gExternalKeys = nullptr;
-        LOG_WARN("[CNFONT][EXT] read key table failed");
+        LOG_WARN("[CJKFONT][EXT] read key table failed");
         return false;
     }
 
     gExternalFontCount = header.count;
     gExternalFontReady = true;
     if (!gExternalFontLoggedReady) {
-        LOG_INFO("[CNFONT][EXT] ready count=%lu base=0x%08lx", (unsigned long)gExternalFontCount,
-                 (unsigned long)kChineseFontBaseAddr);
+        LOG_INFO("[CJKFONT][EXT] ready count=%lu base=0x%08lx", (unsigned long)gExternalFontCount,
+                 (unsigned long)kCjkFontBaseAddr);
         gExternalFontLoggedReady = true;
     }
     return true;
 }
 
-static bool lookupExternalChineseBitmap(const char *utf8, uint8_t outBitmap[kBitmapSize])
+static bool lookupExternalCjkBitmap(const char *utf8, uint8_t outBitmap[kBitmapSize])
 {
-    if (!ensureExternalChineseFont()) {
+    if (!ensureExternalCjkFont()) {
         return false;
     }
 
@@ -222,16 +222,16 @@ static bool lookupExternalChineseBitmap(const char *utf8, uint8_t outBitmap[kBit
     }
 
     const uint32_t keyBytes = gExternalFontCount * kUtf8KeySize;
-    const uint32_t bitmapOffset = sizeof(ChineseFontFileHeader) + keyBytes + (static_cast<uint32_t>(foundIndex) * kBitmapSize);
-    return nodara::ExtFlashRawRead(kChineseFontBaseAddr + bitmapOffset, outBitmap, kBitmapSize);
+    const uint32_t bitmapOffset = sizeof(CjkFontFileHeader) + keyBytes + (static_cast<uint32_t>(foundIndex) * kBitmapSize);
+    return nodara::ExtFlashRawRead(kCjkFontBaseAddr + bitmapOffset, outBitmap, kBitmapSize);
 }
 
-#if CNFONT_EMBED_INTERNAL_TABLE
-static bool lookupInternalChineseBitmap(const char *utf8, const uint8_t *&outBitmap)
+#if CJKFONT_EMBED_INTERNAL_TABLE
+static bool lookupInternalCjkBitmap(const char *utf8, const uint8_t *&outBitmap)
 {
-    for (unsigned int i = 0; i < chineseFontCount; i++) {
-        if (strcmp(chineseFont[i].utf8, utf8) == 0) {
-            outBitmap = chineseFont[i].bitmap;
+    for (unsigned int i = 0; i < cjkFontCount; i++) {
+        if (strcmp(cjkFont[i].utf8, utf8) == 0) {
+            outBitmap = cjkFont[i].bitmap;
             return true;
         }
     }
@@ -254,21 +254,21 @@ static void drawGlyphBitmap(OLEDDisplay *display, int16_t x, int16_t y, const ui
 } // namespace
 
 // Lookup order: internal table first, then external QSPI. Never rewrite QSPI at runtime
-// unless CNFONT_ALLOW_RUNTIME_EXT_REBUILD=1 (default off).
-bool drawChineseChar(OLEDDisplay *display, int16_t x, int16_t y, const char *utf8)
+// unless CJKFONT_ALLOW_RUNTIME_EXT_REBUILD=1 (default off).
+bool drawCjkChar(OLEDDisplay *display, int16_t x, int16_t y, const char *utf8)
 {
-#if CNFONT_EMBED_INTERNAL_TABLE
+#if CJKFONT_EMBED_INTERNAL_TABLE
     const uint8_t *internalBitmap = nullptr;
-    if (lookupInternalChineseBitmap(utf8, internalBitmap)) {
+    if (lookupInternalCjkBitmap(utf8, internalBitmap)) {
         drawGlyphBitmap(display, x, y, internalBitmap);
         return true;
     }
 #endif
 
     uint8_t externalBitmap[kBitmapSize];
-    if (lookupExternalChineseBitmap(utf8, externalBitmap)) {
+    if (lookupExternalCjkBitmap(utf8, externalBitmap)) {
         if (!gExternalFontLoggedHit) {
-            LOG_INFO("[CNFONT][EXT] first external glyph hit");
+            LOG_INFO("[CJKFONT][EXT] first external glyph hit");
             gExternalFontLoggedHit = true;
         }
         drawGlyphBitmap(display, x, y, externalBitmap);
@@ -276,13 +276,13 @@ bool drawChineseChar(OLEDDisplay *display, int16_t x, int16_t y, const char *utf
     }
 
     if (!gExternalFontLoggedMiss) {
-        LOG_WARN("[CNFONT] glyph not found in internal/external tables");
+        LOG_WARN("[CJKFONT] glyph not found in internal/external tables");
         gExternalFontLoggedMiss = true;
     }
     return false;
 }
 
-void drawChineseStringWithLineBreak(OLEDDisplay *display, int16_t x, int16_t y, const char *str)
+void drawCjkStringWithLineBreak(OLEDDisplay *display, int16_t x, int16_t y, const char *str)
 {
     int offset = 0;
     int16_t currentX = x;
@@ -335,7 +335,7 @@ void drawChineseStringWithLineBreak(OLEDDisplay *display, int16_t x, int16_t y, 
                 currentY += lineHeight;
             }
 
-            bool drawn = drawChineseChar(display, currentX, currentY, buf);
+            bool drawn = drawCjkChar(display, currentX, currentY, buf);
             if (drawn) {
                 currentX += static_cast<int16_t>(kGlyphWidth);
             } else {

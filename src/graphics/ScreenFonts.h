@@ -1,5 +1,5 @@
 #pragma once
-#include "graphics/draw/DrawChineseFont.h"
+#include "graphics/draw/DrawCjkFont.h"
 #include "graphics/fonts/OLEDDisplayFontsDL.h"
 #ifdef OLED_PL
 #include "graphics/fonts/OLEDDisplayFontsPL.h"

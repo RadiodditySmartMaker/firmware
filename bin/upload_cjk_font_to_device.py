@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Upload `chinese_font.bin` directly to the device external QSPI flash over the
+Upload `cjk_font.bin` directly to the device external QSPI flash over the
 Meshtastic serial protobuf API using the existing device-side XMODEM transport.
 
 The device firmware must include the matching XMODEM/QSPI receiver support.
 
 Usage:
-  python3 bin/upload_chinese_font_to_device.py --port /dev/tty.usbmodemXXXX
-  python3 bin/upload_chinese_font_to_device.py --port /dev/tty.usbmodemXXXX --baud 115200
-  python3 bin/upload_chinese_font_to_device.py --port /dev/tty.usbmodemXXXX --input bin/chinese_font.bin
+  python3 bin/upload_cjk_font_to_device.py --port /dev/tty.usbmodemXXXX
+  python3 bin/upload_cjk_font_to_device.py --port /dev/tty.usbmodemXXXX --baud 115200
+  python3 bin/upload_cjk_font_to_device.py --port /dev/tty.usbmodemXXXX --input bin/cjk_font.bin
 """
 
 from __future__ import annotations
@@ -49,14 +49,14 @@ XMODEM_BUFFER_TAG = 4
 HEARTBEAT_NONCE_TAG = 1
 
 PACKET_SIZE = 128
-TARGET_NAME = b"qspi://chinese_font.bin"
+TARGET_NAME = b"qspi://cjk_font.bin"
 MAX_FRAME_SIZE = 512
 
-CHFONT_MAGIC = 0x43484631
-CHFONT_VERSION = 1
-CHFONT_MAX_BYTES = 0x00080000
-CHFONT_KEY_SIZE = 4
-CHFONT_BITMAP_SIZE = 32
+CJKFONT_MAGIC = 0x434A4B31
+CJKFONT_VERSION = 1
+CJKFONT_MAX_BYTES = 0x00080000
+CJKFONT_KEY_SIZE = 4
+CJKFONT_BITMAP_SIZE = 32
 SPECIAL_NONCE_ONLY_CONFIG = 69420
 
 
@@ -479,16 +479,16 @@ def connect_api_port(port_name: str, baud: int, wait_seconds: float, boot_wait: 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Upload chinese_font.bin to external QSPI flash over Meshtastic serial API")
+    parser = argparse.ArgumentParser(description="Upload cjk_font.bin to external QSPI flash over Meshtastic serial API")
     parser.add_argument("--port", required=True, help="Serial port, e.g. /dev/tty.usbmodemXXXX")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
-    parser.add_argument("--input", default="bin/chinese_font.bin", help="Path to chinese_font.bin")
+    parser.add_argument("--input", default="bin/cjk_font.bin", help="Path to cjk_font.bin")
     parser.add_argument("--target-name", default=TARGET_NAME.decode("utf-8"), help="Device-side XMODEM target name")
-    parser.add_argument("--magic", type=parse_int_auto, default=CHFONT_MAGIC, help="Expected image magic")
-    parser.add_argument("--version", type=int, default=CHFONT_VERSION, help="Expected image version")
-    parser.add_argument("--key-size", type=int, default=CHFONT_KEY_SIZE, help="UTF-8 key size in bytes")
-    parser.add_argument("--bitmap-size", type=int, default=CHFONT_BITMAP_SIZE, help="Bitmap size per glyph in bytes")
-    parser.add_argument("--max-bytes", type=parse_int_auto, default=CHFONT_MAX_BYTES, help="Maximum accepted image size")
+    parser.add_argument("--magic", type=parse_int_auto, default=CJKFONT_MAGIC, help="Expected image magic")
+    parser.add_argument("--version", type=int, default=CJKFONT_VERSION, help="Expected image version")
+    parser.add_argument("--key-size", type=int, default=CJKFONT_KEY_SIZE, help="UTF-8 key size in bytes")
+    parser.add_argument("--bitmap-size", type=int, default=CJKFONT_BITMAP_SIZE, help="Bitmap size per glyph in bytes")
+    parser.add_argument("--max-bytes", type=parse_int_auto, default=CJKFONT_MAX_BYTES, help="Maximum accepted image size")
     parser.add_argument("--retries", type=int, default=8, help="Retry count for each packet")
     parser.add_argument("--erase-timeout", type=float, default=20.0, help="Timeout for the initial erase/prepare step")
     parser.add_argument("--packet-timeout", type=float, default=5.0, help="Timeout for each data packet")

@@ -248,15 +248,15 @@ def normalize_serial_port(port):
     return port
 
 
-def should_auto_upload_chinese_font():
+def should_auto_upload_cjk_font():
     """Host-side QSPI font upload after `pio upload`.
 
-    Independent of CNFONT_EMBED_INTERNAL_TABLE:
-      - custom_upload_external_chinese_font=true  -> generate+upload external font bin
-      - custom_upload_external_chinese_font=false -> do not touch device QSPI from the host
-    Firmware runtime does not rewrite QSPI unless CNFONT_ALLOW_RUNTIME_EXT_REBUILD=1.
+    Independent of CJKFONT_EMBED_INTERNAL_TABLE:
+      - custom_upload_external_cjk_font=true  -> generate+upload external font bin
+      - custom_upload_external_cjk_font=false -> do not touch device QSPI from the host
+    Firmware runtime does not rewrite QSPI unless CJKFONT_ALLOW_RUNTIME_EXT_REBUILD=1.
     """
-    val = env.GetProjectOption("custom_upload_external_chinese_font", None)
+    val = env.GetProjectOption("custom_upload_external_cjk_font", None)
     if val is None:
         return False
 
@@ -275,37 +275,37 @@ def append_optional_arg(cmd, option_name, option_value):
     cmd.extend([option_name, option_value])
 
 
-def auto_upload_chinese_font(source, target, env):
-    if not should_auto_upload_chinese_font():
+def auto_upload_cjk_font(source, target, env):
+    if not should_auto_upload_cjk_font():
         return
 
     port = resolve_serial_port()
     if not port:
-        print("Skipping external Chinese font upload: no serial port configured")
+        print("Skipping external CJK font upload: no serial port configured")
         return
     port = normalize_serial_port(port)
 
     project_dir = env["PROJECT_DIR"]
     python_exe = sys.executable
-    font_source = str(get_project_option_safe("custom_external_font_source", "src/graphics/fonts/ChineseFontData.cpp"))
-    font_output = str(get_project_option_safe("custom_external_font_output", "bin/chinese_font.bin"))
-    font_target = str(get_project_option_safe("custom_external_font_target", "qspi://chinese_font.bin"))
-    font_type_name = str(get_project_option_safe("custom_external_font_type_name", "ChineseFont"))
-    font_array_name = str(get_project_option_safe("custom_external_font_array_name", "chineseFont"))
+    font_source = str(get_project_option_safe("custom_external_font_source", "src/graphics/fonts/CjkFontData.cpp"))
+    font_output = str(get_project_option_safe("custom_external_font_output", "bin/cjk_font.bin"))
+    font_target = str(get_project_option_safe("custom_external_font_target", "qspi://cjk_font.bin"))
+    font_type_name = str(get_project_option_safe("custom_external_font_type_name", "CjkFont"))
+    font_array_name = str(get_project_option_safe("custom_external_font_array_name", "cjkFont"))
     key_size = get_project_option_safe("custom_external_font_key_size", "4")
     glyph_width = get_project_option_safe("custom_external_font_glyph_width")
     glyph_height = get_project_option_safe("custom_external_font_glyph_height")
     bitmap_size = get_project_option_safe("custom_external_font_bitmap_size")
-    font_magic = get_project_option_safe("custom_external_font_magic", "0x43484631")
+    font_magic = get_project_option_safe("custom_external_font_magic", "0x434A4B31")
     font_version = get_project_option_safe("custom_external_font_version", "1")
     font_max_bytes = get_project_option_safe("custom_external_font_max_bytes", "0x00080000")
 
     font_bin = join(project_dir, font_output)
-    generate_script = join(project_dir, "bin", "generate_chinese_font_bin.py")
-    upload_script = join(project_dir, "bin", "upload_chinese_font_to_device.py")
+    generate_script = join(project_dir, "bin", "generate_cjk_font_bin.py")
+    upload_script = join(project_dir, "bin", "upload_cjk_font_to_device.py")
     baud = str(get_project_option_safe("monitor_speed", env.get("MONITOR_SPEED", 115200)))
 
-    print("Generating external Chinese font image")
+    print("Generating external CJK font image")
     generate_cmd = [
         python_exe,
         generate_script,
@@ -329,7 +329,7 @@ def auto_upload_chinese_font(source, target, env):
     append_optional_arg(generate_cmd, "--bitmap-size", bitmap_size)
     subprocess.check_call(generate_cmd, cwd=project_dir)
 
-    print(f"Uploading external Chinese font image via {port}")
+    print(f"Uploading external CJK font image via {port}")
     upload_cmd = [
         python_exe,
         upload_script,
@@ -358,8 +358,8 @@ def auto_upload_chinese_font(source, target, env):
     subprocess.check_call(upload_cmd, cwd=project_dir)
 
 
-if should_auto_upload_chinese_font():
-    env.AddPostAction("upload", auto_upload_chinese_font)
+if should_auto_upload_cjk_font():
+    env.AddPostAction("upload", auto_upload_cjk_font)
 
 Import("projenv")
 

@@ -7,7 +7,7 @@
 #include "graphics/ScreenFonts.h"
 #include "graphics/SharedUIDisplay.h"
 #include "graphics/TimeFormatters.h"
-#include "graphics/draw/DrawChineseFont.h"
+#include "graphics/draw/DrawCjkFont.h"
 #include "graphics/draw/UIRenderer.h"
 #include "graphics/fonts/OLEDDisplayFontsDL.h"
 #include "main.h"
@@ -228,7 +228,7 @@ void drawChannelTextMessageFrame(OLEDDisplay *display, OLEDDisplayUiState *state
 
     snprintf(tempBuf, sizeof(tempBuf), "%s", mp.decoded.payload.bytes);
     // display->drawStringMaxWidth(0 + x, 0 + y + selectedFontHeight, x + display->getWidth(), tempBuf);
-    drawChineseStringWithLineBreak(display, 0 + x, 0 + y + selectedFontHeight, tempBuf);
+    drawCjkStringWithLineBreak(display, 0 + x, 0 + y + selectedFontHeight, tempBuf);
 
 #endif
 }

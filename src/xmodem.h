@@ -56,7 +56,7 @@ class XModemAdapter
     enum class ReceiveTarget : uint8_t {
         None,
         Filesystem,
-        ExternalChineseFont,
+        ExternalCjkFont,
     };
 
     bool isReceiving = false;

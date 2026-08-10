@@ -59,7 +59,7 @@ XModemAdapter xModem;
 
 namespace
 {
-constexpr const char *kExternalChineseFontTarget = CNFONT_CFG_TARGET_NAME;
+constexpr const char *kExternalCjkFontTarget = CJKFONT_CFG_TARGET_NAME;
 }
 
 XModemAdapter::XModemAdapter() {}
@@ -130,12 +130,12 @@ void XModemAdapter::handlePacket(meshtastic_XModem xmodemPacket)
             memcpy(filename, &xmodemPacket.buffer.bytes, xmodemPacket.buffer.size);
 
             if (xmodemPacket.control == meshtastic_XModem_Control_SOH) { // Receive this file and put to Flash
-                if (strcmp(filename, kExternalChineseFontTarget) == 0) {
-                    if (nodara::ExtFlashBeginChineseFontUpload()) {
+                if (strcmp(filename, kExternalCjkFontTarget) == 0) {
+                    if (nodara::ExtFlashBeginCjkFontUpload()) {
                         sendControl(meshtastic_XModem_Control_ACK);
                         isReceiving = true;
                         packetno = 1;
-                        receiveTarget = ReceiveTarget::ExternalChineseFont;
+                        receiveTarget = ReceiveTarget::ExternalCjkFont;
                         receiveOffset = 0;
                         LOG_INFO("XModem: Receive external font image");
                         break;
@@ -196,8 +196,8 @@ void XModemAdapter::handlePacket(meshtastic_XModem xmodemPacket)
                     check(xmodemPacket.buffer.bytes, xmodemPacket.buffer.size, xmodemPacket.crc16)) {
                     // valid packet
                     bool ok = false;
-                    if (receiveTarget == ReceiveTarget::ExternalChineseFont) {
-                        ok = nodara::ExtFlashWriteChineseFontUploadChunk(receiveOffset, xmodemPacket.buffer.bytes,
+                    if (receiveTarget == ReceiveTarget::ExternalCjkFont) {
+                        ok = nodara::ExtFlashWriteCjkFontUploadChunk(receiveOffset, xmodemPacket.buffer.bytes,
                                                                                 xmodemPacket.buffer.size);
                     } else if (receiveTarget == ReceiveTarget::Filesystem) {
                         spiLock->lock();
@@ -226,9 +226,9 @@ void XModemAdapter::handlePacket(meshtastic_XModem xmodemPacket)
         break;
     case meshtastic_XModem_Control_EOT:
         // End of transmission
-        if (receiveTarget == ReceiveTarget::ExternalChineseFont) {
-            if (!nodara::ExtFlashFinishChineseFontUpload(receiveOffset)) {
-                nodara::ExtFlashAbortChineseFontUpload();
+        if (receiveTarget == ReceiveTarget::ExternalCjkFont) {
+            if (!nodara::ExtFlashFinishCjkFontUpload(receiveOffset)) {
+                nodara::ExtFlashAbortCjkFontUpload();
                 sendControl(meshtastic_XModem_Control_CAN);
                 isReceiving = false;
                 receiveTarget = ReceiveTarget::None;
@@ -250,8 +250,8 @@ void XModemAdapter::handlePacket(meshtastic_XModem xmodemPacket)
     case meshtastic_XModem_Control_CAN:
         // Cancel transmission and remove file
         sendControl(meshtastic_XModem_Control_ACK);
-        if (receiveTarget == ReceiveTarget::ExternalChineseFont) {
-            nodara::ExtFlashAbortChineseFontUpload();
+        if (receiveTarget == ReceiveTarget::ExternalCjkFont) {
+            nodara::ExtFlashAbortCjkFontUpload();
         } else {
             spiLock->lock();
             file.flush();

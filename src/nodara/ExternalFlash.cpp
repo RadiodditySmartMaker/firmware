@@ -18,15 +18,15 @@
 namespace nodara
 {
 
-static constexpr uint32_t CNFONT_EXT_ADDR = CNFONT_CFG_EXT_ADDR;
-static constexpr uint32_t CNFONT_EXT_MAX_BYTES = CNFONT_CFG_MAX_BYTES;
-static constexpr uint32_t CNFONT_MAGIC = CNFONT_CFG_MAGIC;
-static constexpr uint32_t CNFONT_VERSION = CNFONT_CFG_VERSION;
-static constexpr uint32_t CNFONT_KEY_SIZE = CNFONT_CFG_KEY_SIZE;
-static constexpr uint32_t CNFONT_BITMAP_SIZE = CNFONT_CFG_BITMAP_SIZE;
+static constexpr uint32_t CJKFONT_EXT_ADDR = CJKFONT_CFG_EXT_ADDR;
+static constexpr uint32_t CJKFONT_EXT_MAX_BYTES = CJKFONT_CFG_MAX_BYTES;
+static constexpr uint32_t CJKFONT_MAGIC = CJKFONT_CFG_MAGIC;
+static constexpr uint32_t CJKFONT_VERSION = CJKFONT_CFG_VERSION;
+static constexpr uint32_t CJKFONT_KEY_SIZE = CJKFONT_CFG_KEY_SIZE;
+static constexpr uint32_t CJKFONT_BITMAP_SIZE = CJKFONT_CFG_BITMAP_SIZE;
 
 #pragma pack(push, 1)
-struct ChineseFontImageHeader {
+struct CjkFontImageHeader {
     uint32_t magic;
     uint32_t version;
     uint32_t count;
@@ -202,45 +202,45 @@ bool ExtFlashRawErase(uint32_t addr, uint32_t len)
     return true;
 }
 
-bool ExtFlashBeginChineseFontUpload()
+bool ExtFlashBeginCjkFontUpload()
 {
-    return ExtFlashRawErase(CNFONT_EXT_ADDR, CNFONT_EXT_MAX_BYTES);
+    return ExtFlashRawErase(CJKFONT_EXT_ADDR, CJKFONT_EXT_MAX_BYTES);
 }
 
-bool ExtFlashWriteChineseFontUploadChunk(uint32_t offset, const void *buf, uint32_t len)
+bool ExtFlashWriteCjkFontUploadChunk(uint32_t offset, const void *buf, uint32_t len)
 {
     if (!buf || len == 0)
         return false;
-    if (offset > CNFONT_EXT_MAX_BYTES || len > (CNFONT_EXT_MAX_BYTES - offset))
+    if (offset > CJKFONT_EXT_MAX_BYTES || len > (CJKFONT_EXT_MAX_BYTES - offset))
         return false;
 
-    return ExtFlashRawWrite(CNFONT_EXT_ADDR + offset, buf, len);
+    return ExtFlashRawWrite(CJKFONT_EXT_ADDR + offset, buf, len);
 }
 
-bool ExtFlashFinishChineseFontUpload(uint32_t totalBytes)
+bool ExtFlashFinishCjkFontUpload(uint32_t totalBytes)
 {
-    if (totalBytes < sizeof(ChineseFontImageHeader) || totalBytes > CNFONT_EXT_MAX_BYTES)
+    if (totalBytes < sizeof(CjkFontImageHeader) || totalBytes > CJKFONT_EXT_MAX_BYTES)
         return false;
 
-    ChineseFontImageHeader header = {};
-    if (!ExtFlashRawRead(CNFONT_EXT_ADDR, &header, sizeof(header)))
+    CjkFontImageHeader header = {};
+    if (!ExtFlashRawRead(CJKFONT_EXT_ADDR, &header, sizeof(header)))
         return false;
 
-    if (header.magic != CNFONT_MAGIC || header.version != CNFONT_VERSION || header.count == 0)
+    if (header.magic != CJKFONT_MAGIC || header.version != CJKFONT_VERSION || header.count == 0)
         return false;
 
-    const uint32_t keyBytes = header.count * CNFONT_KEY_SIZE;
-    const uint32_t bitmapBytes = header.count * CNFONT_BITMAP_SIZE;
+    const uint32_t keyBytes = header.count * CJKFONT_KEY_SIZE;
+    const uint32_t bitmapBytes = header.count * CJKFONT_BITMAP_SIZE;
     const uint32_t expectedBytes = sizeof(header) + keyBytes + bitmapBytes;
-    if (expectedBytes != totalBytes || expectedBytes > CNFONT_EXT_MAX_BYTES)
+    if (expectedBytes != totalBytes || expectedBytes > CJKFONT_EXT_MAX_BYTES)
         return false;
 
     return true;
 }
 
-void ExtFlashAbortChineseFontUpload()
+void ExtFlashAbortCjkFontUpload()
 {
-    (void)ExtFlashRawErase(CNFONT_EXT_ADDR, kExtFlashSectorSize);
+    (void)ExtFlashRawErase(CJKFONT_EXT_ADDR, kExtFlashSectorSize);
 }
 
 void ExtFlashSelfTest()
@@ -269,19 +269,19 @@ bool ExtFlashRawErase(uint32_t, uint32_t)
 {
     return false;
 }
-bool ExtFlashBeginChineseFontUpload()
+bool ExtFlashBeginCjkFontUpload()
 {
     return false;
 }
-bool ExtFlashWriteChineseFontUploadChunk(uint32_t, const void *, uint32_t)
+bool ExtFlashWriteCjkFontUploadChunk(uint32_t, const void *, uint32_t)
 {
     return false;
 }
-bool ExtFlashFinishChineseFontUpload(uint32_t)
+bool ExtFlashFinishCjkFontUpload(uint32_t)
 {
     return false;
 }
-void ExtFlashAbortChineseFontUpload() {}
+void ExtFlashAbortCjkFontUpload() {}
 #endif
 
 } // namespace nodara
@@ -310,19 +310,19 @@ bool ExtFlashRawErase(uint32_t, uint32_t)
 {
     return false;
 }
-bool ExtFlashBeginChineseFontUpload()
+bool ExtFlashBeginCjkFontUpload()
 {
     return false;
 }
-bool ExtFlashWriteChineseFontUploadChunk(uint32_t, const void *, uint32_t)
+bool ExtFlashWriteCjkFontUploadChunk(uint32_t, const void *, uint32_t)
 {
     return false;
 }
-bool ExtFlashFinishChineseFontUpload(uint32_t)
+bool ExtFlashFinishCjkFontUpload(uint32_t)
 {
     return false;
 }
-void ExtFlashAbortChineseFontUpload() {}
+void ExtFlashAbortCjkFontUpload() {}
 
 } // namespace nodara
 
