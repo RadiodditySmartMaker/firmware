@@ -7,7 +7,7 @@ Output layout:
   uint32 version
   uint32 count
   uint32 reserved = 0
-  uint8  key_table[count][key_size]
+  uint8  key_table[count][key_size]   # v2+: sorted by key for QSPI binary search
   uint8  bitmap_table[count][bitmap_size]
 
 Examples:
@@ -26,7 +26,7 @@ from pathlib import Path
 
 
 MAGIC = 0x434A4B31  # "CJK1"
-VERSION = 1
+VERSION = 2  # sorted key table; firmware binary-searches QSPI
 KEY_SIZE = 4
 BITMAP_SIZE = 32
 
@@ -102,9 +102,11 @@ def make_utf8_key(text: str, key_size: int) -> bytes:
 
 
 def build_binary(entries: list[tuple[str, bytes]], magic: int, version: int, key_size: int) -> bytes:
-    header = struct.pack("<IIII", magic, version, len(entries), 0)
-    key_table = b"".join(make_utf8_key(text, key_size) for text, _ in entries)
-    bitmap_table = b"".join(bitmap for _, bitmap in entries)
+    keyed = [(make_utf8_key(text, key_size), bitmap) for text, bitmap in entries]
+    keyed.sort(key=lambda item: item[0])
+    header = struct.pack("<IIII", magic, version, len(keyed), 0)
+    key_table = b"".join(key for key, _ in keyed)
+    bitmap_table = b"".join(bitmap for _, bitmap in keyed)
     return header + key_table + bitmap_table
 
 
@@ -188,7 +190,7 @@ def main() -> int:
     print(f"Bitmap size: {bitmap_size}")
     if args.glyph_width is not None and args.glyph_height is not None:
         print(f"Glyph geometry: {args.glyph_width}x{args.glyph_height}")
-    print(f"Header: magic=0x{args.magic:08x} version={args.version}")
+    print(f"Header: magic=0x{args.magic:08x} version={args.version} (keys sorted)")
     return 0
 
 

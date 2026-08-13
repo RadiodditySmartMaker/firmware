@@ -1,7 +1,6 @@
 #include "DrawCjkFont.h"
 #include "DebugConfiguration.h"
 #include "nodara/ExternalFlash.h"
-#include <new>
 #include <string.h>
 
 #ifndef CJKFONT_EMBED_INTERNAL_TABLE
@@ -18,7 +17,6 @@
 namespace
 {
 static constexpr uint32_t kCjkFontMagic = CJKFONT_CFG_MAGIC;
-static constexpr uint32_t kCjkFontVersion = CJKFONT_CFG_VERSION;
 static constexpr uint32_t kCjkFontBaseAddr = CJKFONT_CFG_EXT_ADDR;
 static constexpr uint32_t kCjkFontMaxBytes = CJKFONT_CFG_MAX_BYTES;
 static constexpr uint32_t kUtf8KeySize = CJKFONT_CFG_KEY_SIZE;
@@ -36,10 +34,14 @@ struct CjkFontFileHeader {
     uint32_t reserved;
 };
 
+static constexpr uint32_t kCjkFontVersionUnsorted = 1;
+static constexpr uint32_t kCjkFontVersionSorted = 2;
+static constexpr uint32_t kKeyChunkCount = 64; // 256 bytes on the stack
+
 static bool gExternalFontTriedInit = false;
 static bool gExternalFontReady = false;
+static bool gExternalFontSorted = false;
 static uint32_t gExternalFontCount = 0;
-static uint8_t *gExternalKeys = nullptr; // count * key_size bytes
 static bool gExternalFontLoggedReady = false;
 static bool gExternalFontLoggedHit = false;
 static bool gExternalFontLoggedMiss = false;
@@ -71,10 +73,16 @@ static void makeUtf8Key(const char *utf8, uint8_t out[kUtf8KeySize])
     }
 }
 
+static bool isSupportedExternalVersion(uint32_t version)
+{
+    return version == kCjkFontVersionUnsorted || version == kCjkFontVersionSorted;
+}
+
 #if CJKFONT_ALLOW_RUNTIME_EXT_REBUILD && CJKFONT_EMBED_INTERNAL_TABLE
 static bool exportCjkFontToExternal()
 {
-    CjkFontFileHeader header = {kCjkFontMagic, kCjkFontVersion, cjkFontCount, 0};
+    // Unsorted v1 image; write keys one-by-one so runtime never allocates count*key_size.
+    CjkFontFileHeader header = {kCjkFontMagic, kCjkFontVersionUnsorted, cjkFontCount, 0};
     const uint32_t keyBytes = cjkFontCount * kUtf8KeySize;
     const uint32_t bitmapBytes = cjkFontCount * kBitmapSize;
     const uint32_t totalBytes = sizeof(header) + keyBytes + bitmapBytes;
@@ -95,22 +103,16 @@ static bool exportCjkFontToExternal()
         return false;
     }
 
-    uint8_t *keyTable = new (std::nothrow) uint8_t[keyBytes];
-    if (!keyTable) {
-        LOG_WARN("[CJKFONT][EXT] alloc key table failed: %lu bytes", (unsigned long)keyBytes);
-        return false;
-    }
-
+    uint8_t key[kUtf8KeySize];
+    uint32_t keyAddr = kCjkFontBaseAddr + sizeof(header);
     for (uint32_t i = 0; i < cjkFontCount; ++i) {
-        makeUtf8Key(cjkFont[i].utf8, keyTable + i * kUtf8KeySize);
+        makeUtf8Key(cjkFont[i].utf8, key);
+        if (!nodara::ExtFlashRawWrite(keyAddr, key, kUtf8KeySize)) {
+            LOG_WARN("[CJKFONT][EXT] write key failed at index=%lu", (unsigned long)i);
+            return false;
+        }
+        keyAddr += kUtf8KeySize;
     }
-
-    if (!nodara::ExtFlashRawWrite(kCjkFontBaseAddr + sizeof(header), keyTable, keyBytes)) {
-        delete[] keyTable;
-        LOG_WARN("[CJKFONT][EXT] write key table failed");
-        return false;
-    }
-    delete[] keyTable;
 
     uint32_t bitmapAddr = kCjkFontBaseAddr + sizeof(header) + keyBytes;
     for (uint32_t i = 0; i < cjkFontCount; ++i) {
@@ -146,7 +148,7 @@ static bool ensureExternalCjkFont()
     }
 
     const bool headerBasicInvalid =
-        (header.magic != kCjkFontMagic || header.version != kCjkFontVersion || header.count == 0);
+        (header.magic != kCjkFontMagic || !isSupportedExternalVersion(header.version) || header.count == 0);
 
     if (headerBasicInvalid) {
 #if CJKFONT_ALLOW_RUNTIME_EXT_REBUILD && CJKFONT_EMBED_INTERNAL_TABLE
@@ -167,7 +169,7 @@ static bool ensureExternalCjkFont()
 #endif
     }
 
-    if (header.magic != kCjkFontMagic || header.version != kCjkFontVersion || header.count == 0) {
+    if (header.magic != kCjkFontMagic || !isSupportedExternalVersion(header.version) || header.count == 0) {
         LOG_WARN("[CJKFONT][EXT] invalid header after init");
         return false;
     }
@@ -178,27 +180,77 @@ static bool ensureExternalCjkFont()
         return false;
     }
 
-    gExternalKeys = new (std::nothrow) uint8_t[keyBytes];
-    if (!gExternalKeys) {
-        LOG_WARN("[CJKFONT][EXT] alloc runtime key table failed: %lu bytes", (unsigned long)keyBytes);
-        return false;
-    }
-
-    if (!nodara::ExtFlashRawRead(kCjkFontBaseAddr + sizeof(header), gExternalKeys, keyBytes)) {
-        delete[] gExternalKeys;
-        gExternalKeys = nullptr;
-        LOG_WARN("[CJKFONT][EXT] read key table failed");
-        return false;
-    }
-
     gExternalFontCount = header.count;
+    gExternalFontSorted = (header.version >= kCjkFontVersionSorted);
     gExternalFontReady = true;
     if (!gExternalFontLoggedReady) {
-        LOG_INFO("[CJKFONT][EXT] ready count=%lu base=0x%08lx", (unsigned long)gExternalFontCount,
-                 (unsigned long)kCjkFontBaseAddr);
+        LOG_INFO("[CJKFONT][EXT] ready count=%lu ver=%lu sorted=%d base=0x%08lx", (unsigned long)gExternalFontCount,
+                 (unsigned long)header.version, gExternalFontSorted ? 1 : 0, (unsigned long)kCjkFontBaseAddr);
         gExternalFontLoggedReady = true;
     }
     return true;
+}
+
+static uint32_t externalKeyTableAddr()
+{
+    return kCjkFontBaseAddr + sizeof(CjkFontFileHeader);
+}
+
+static uint32_t externalBitmapTableAddr()
+{
+    return externalKeyTableAddr() + gExternalFontCount * kUtf8KeySize;
+}
+
+static bool readExternalBitmapAt(uint32_t index, uint8_t outBitmap[kBitmapSize])
+{
+    return nodara::ExtFlashRawRead(externalBitmapTableAddr() + index * kBitmapSize, outBitmap, kBitmapSize);
+}
+
+static bool lookupExternalIndexSorted(const uint8_t key[kUtf8KeySize], uint32_t &outIndex)
+{
+    uint32_t lo = 0;
+    uint32_t hi = gExternalFontCount;
+    const uint32_t keyBase = externalKeyTableAddr();
+
+    while (lo < hi) {
+        const uint32_t mid = lo + (hi - lo) / 2;
+        uint8_t midKey[kUtf8KeySize];
+        if (!nodara::ExtFlashRawRead(keyBase + mid * kUtf8KeySize, midKey, kUtf8KeySize)) {
+            return false;
+        }
+        const int cmp = memcmp(midKey, key, kUtf8KeySize);
+        if (cmp == 0) {
+            outIndex = mid;
+            return true;
+        }
+        if (cmp < 0) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return false;
+}
+
+static bool lookupExternalIndexChunked(const uint8_t key[kUtf8KeySize], uint32_t &outIndex)
+{
+    uint8_t chunk[kKeyChunkCount * kUtf8KeySize];
+    const uint32_t keyBase = externalKeyTableAddr();
+
+    for (uint32_t i = 0; i < gExternalFontCount;) {
+        const uint32_t n = (gExternalFontCount - i < kKeyChunkCount) ? (gExternalFontCount - i) : kKeyChunkCount;
+        if (!nodara::ExtFlashRawRead(keyBase + i * kUtf8KeySize, chunk, n * kUtf8KeySize)) {
+            return false;
+        }
+        for (uint32_t j = 0; j < n; ++j) {
+            if (memcmp(chunk + j * kUtf8KeySize, key, kUtf8KeySize) == 0) {
+                outIndex = i + j;
+                return true;
+            }
+        }
+        i += n;
+    }
+    return false;
 }
 
 static bool lookupExternalCjkBitmap(const char *utf8, uint8_t outBitmap[kBitmapSize])
@@ -210,20 +262,13 @@ static bool lookupExternalCjkBitmap(const char *utf8, uint8_t outBitmap[kBitmapS
     uint8_t key[kUtf8KeySize];
     makeUtf8Key(utf8, key);
 
-    int32_t foundIndex = -1;
-    for (uint32_t i = 0; i < gExternalFontCount; ++i) {
-        if (memcmp(gExternalKeys + (i * kUtf8KeySize), key, kUtf8KeySize) == 0) {
-            foundIndex = static_cast<int32_t>(i);
-            break;
-        }
-    }
-    if (foundIndex < 0) {
+    uint32_t foundIndex = 0;
+    const bool found =
+        gExternalFontSorted ? lookupExternalIndexSorted(key, foundIndex) : lookupExternalIndexChunked(key, foundIndex);
+    if (!found) {
         return false;
     }
-
-    const uint32_t keyBytes = gExternalFontCount * kUtf8KeySize;
-    const uint32_t bitmapOffset = sizeof(CjkFontFileHeader) + keyBytes + (static_cast<uint32_t>(foundIndex) * kBitmapSize);
-    return nodara::ExtFlashRawRead(kCjkFontBaseAddr + bitmapOffset, outBitmap, kBitmapSize);
+    return readExternalBitmapAt(foundIndex, outBitmap);
 }
 
 #if CJKFONT_EMBED_INTERNAL_TABLE
@@ -241,6 +286,7 @@ static bool lookupInternalCjkBitmap(const char *utf8, const uint8_t *&outBitmap)
 
 static void drawGlyphBitmap(OLEDDisplay *display, int16_t x, int16_t y, const uint8_t *bitmap)
 {
+    LOG_INFO("kGlyphYOffset = %d", kGlyphYOffset);
     for (uint32_t row = 0; row < kGlyphHeight; ++row) {
         for (uint32_t col = 0; col < kGlyphWidth; ++col) {
             const uint32_t byteIndex = row * kBytesPerRow + (col / 8U);
@@ -253,8 +299,8 @@ static void drawGlyphBitmap(OLEDDisplay *display, int16_t x, int16_t y, const ui
 }
 } // namespace
 
-// Lookup order: internal table first, then external QSPI. Never rewrite QSPI at runtime
-// unless CJKFONT_ALLOW_RUNTIME_EXT_REBUILD=1 (default off).
+// Lookup order: internal table first, then external QSPI (v2 binary search, v1 chunked).
+// Never rewrite QSPI at runtime unless CJKFONT_ALLOW_RUNTIME_EXT_REBUILD=1 (default off).
 bool drawCjkChar(OLEDDisplay *display, int16_t x, int16_t y, const char *utf8)
 {
 #if CJKFONT_EMBED_INTERNAL_TABLE

@@ -19,7 +19,7 @@
 #endif
 
 #ifndef CJKFONT_CFG_VERSION
-#define CJKFONT_CFG_VERSION 1U
+#define CJKFONT_CFG_VERSION 2U
 #endif
 
 #ifndef CJKFONT_CFG_KEY_SIZE

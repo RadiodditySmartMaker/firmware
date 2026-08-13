@@ -226,7 +226,7 @@ bool ExtFlashFinishCjkFontUpload(uint32_t totalBytes)
     if (!ExtFlashRawRead(CJKFONT_EXT_ADDR, &header, sizeof(header)))
         return false;
 
-    if (header.magic != CJKFONT_MAGIC || header.version != CJKFONT_VERSION || header.count == 0)
+    if (header.magic != CJKFONT_MAGIC || header.version < 1 || header.version > CJKFONT_VERSION || header.count == 0)
         return false;
 
     const uint32_t keyBytes = header.count * CJKFONT_KEY_SIZE;

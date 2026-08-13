@@ -297,7 +297,7 @@ def auto_upload_cjk_font(source, target, env):
     glyph_height = get_project_option_safe("custom_external_font_glyph_height")
     bitmap_size = get_project_option_safe("custom_external_font_bitmap_size")
     font_magic = get_project_option_safe("custom_external_font_magic", "0x434A4B31")
-    font_version = get_project_option_safe("custom_external_font_version", "1")
+    font_version = get_project_option_safe("custom_external_font_version", "2")
     font_max_bytes = get_project_option_safe("custom_external_font_max_bytes", "0x00080000")
 
     font_bin = join(project_dir, font_output)
