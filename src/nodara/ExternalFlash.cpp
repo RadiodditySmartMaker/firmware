@@ -54,20 +54,31 @@ static void probeRawExternalFlash()
     (void)extFlashTransport.readCommand(SFLASH_CMD_READ_STATUS, &sr1, 1);
     (void)extFlashTransport.readCommand(SFLASH_CMD_READ_STATUS2, &sr2, 1);
     extFlashTransport.end();
+
+    LOG_INFO("[EXTFLASH] JEDEC manufacturer_id=0x%02x memory_type=0x%02x capacity=0x%02x model=%s", (unsigned)jedec[0],
+             (unsigned)jedec[1], (unsigned)jedec[2],
+             (jedec[0] == 0x85 && jedec[1] == 0x20 && jedec[2] == 0x16)   ? "PY25Q32HB"
+             : (jedec[0] == 0x85 && jedec[1] == 0x60 && jedec[2] == 0x16) ? "P25Q32"
+                                                                         : "unknown");
 }
 
 static bool beginExternalFlashWithConfiguredDevice()
 {
-    static SPIFlash_Device_t puyaP25q32 = []() {
+    static SPIFlash_Device_t P25Q32 = []() {
         SPIFlash_Device_t d = {};
+        d.total_size = 4UL * 1024UL * 1024UL;
+        d.start_up_time_us = 10000;
         d.manufacturer_id = 0x85;
-        d.memory_type = 0x20;
+        d.memory_type = 0x60;
         d.capacity = 0x16;
+        d.max_clock_speed_mhz = 16;   
+        d.quad_enable_bit_mask = 0x02;
+        d.supports_fast_read = true;
         d.supports_qspi = true;
         d.supports_qspi_writes = true;
         return d;
     }();
-    return extFlash.begin(&puyaP25q32, 1);
+    return extFlash.begin(&P25Q32, 1);
 }
 
 static void clearExternalFlashProtectionBits()
