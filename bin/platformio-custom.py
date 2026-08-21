@@ -241,10 +241,10 @@ def resolve_serial_port():
 def normalize_serial_port(port):
     if not port:
         return port
-    if port.startswith("/dev/cu."):
-        tty_port = "/dev/tty." + port[len("/dev/cu.") :]
-        if os.path.exists(tty_port):
-            return tty_port
+    if port.startswith("/dev/tty."):
+        cu_port = "/dev/cu." + port[len("/dev/tty.") :]
+        if os.path.exists(cu_port):
+            return cu_port
     return port
 
 
@@ -350,7 +350,7 @@ def auto_upload_cjk_font(source, target, env):
         "--max-bytes",
         str(font_max_bytes),
         "--wait-seconds",
-        "20",
+        "40",
         "--boot-wait",
         "6",
     ]

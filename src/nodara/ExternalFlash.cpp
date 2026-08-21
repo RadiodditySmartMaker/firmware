@@ -209,6 +209,7 @@ bool ExtFlashRawErase(uint32_t addr, uint32_t len)
         if (!waitExtFlashWipClearWithTimeout("erase-sector", kExtFlashWaitTimeoutMs)) {
             return false;
         }
+        delay(1);
     }
     return true;
 }

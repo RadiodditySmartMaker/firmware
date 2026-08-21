@@ -14,7 +14,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import glob
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -381,21 +383,73 @@ def upload_font(port: serial.Serial, blob: bytes, retries: int, erase_timeout: f
     print("上传完成，设备已确认写入。")
 
 
+def is_usbmodem_path(port_name: str) -> bool:
+    name = Path(port_name).name
+    return name.startswith("cu.usbmodem") or name.startswith("tty.usbmodem")
+
+
+def is_com_port(port_name: str) -> bool:
+    name = Path(port_name.replace("\\\\.\\", "")).name.upper()
+    return name.startswith("COM") and name[3:].isdigit()
+
+
+def is_acm_path(port_name: str) -> bool:
+    name = Path(port_name).name
+    return name.startswith("ttyACM")
+
+
+def same_serial_family(left: str, right: str) -> bool:
+    return (
+        (is_usbmodem_path(left) and is_usbmodem_path(right))
+        or (is_com_port(left) and is_com_port(right))
+        or (is_acm_path(left) and is_acm_path(right))
+    )
+
+
+def glob_usb_cdc_ports() -> list[str]:
+    if sys.platform == "win32":
+        return sorted((info.device for info in list_ports.comports()), key=lambda name: name.upper())
+
+    found = glob.glob("/dev/cu.usbmodem*") + glob.glob("/dev/tty.usbmodem*") + glob.glob("/dev/ttyACM*")
+    cu_ports = sorted(port for port in found if Path(port).name.startswith("cu."))
+    other_ports = sorted(port for port in found if not Path(port).name.startswith("cu."))
+    unique: list[str] = []
+    for port in cu_ports + other_ports:
+        if port not in unique:
+            unique.append(port)
+    return unique
+
+
+def port_is_present(port_name: str) -> bool:
+    if sys.platform == "win32":
+        requested = port_name.upper().replace("\\\\.\\", "")
+        for info in list_ports.comports():
+            if info.device.upper().replace("\\\\.\\", "") == requested:
+                return True
+        return False
+    return os.path.exists(port_name)
+
+
 def wait_for_port(port_name: str, wait_seconds: float) -> None:
     deadline = time.monotonic() + wait_seconds
+    last_seen: list[str] = []
     while time.monotonic() < deadline:
-        if os.path.exists(port_name):
+        live = [candidate for candidate in collect_runtime_port_candidates(port_name) if port_is_present(candidate)]
+        if live != last_seen:
+            print(f"发现串口: {live}" if live else "等待设备重新枚举...")
+            last_seen = live
+        if live:
             return
         time.sleep(0.5)
-    raise TimeoutError(f"等待串口 {port_name} 出现超时")
+    raise TimeoutError(f"等待串口 {port_name} 出现超时; 当前串口: {glob_usb_cdc_ports()}")
 
 
 def get_port_candidates(port_name: str) -> list[str]:
     candidates = [port_name]
     if port_name.startswith("/dev/cu."):
-        candidates.insert(0, "/dev/tty." + port_name[len("/dev/cu.") :])
+        candidates.append("/dev/tty." + port_name[len("/dev/cu.") :])
     elif port_name.startswith("/dev/tty."):
-        candidates.append("/dev/cu." + port_name[len("/dev/tty.") :])
+        candidates.insert(0, "/dev/cu." + port_name[len("/dev/tty.") :])
 
     unique: list[str] = []
     for candidate in candidates:
@@ -405,27 +459,21 @@ def get_port_candidates(port_name: str) -> list[str]:
 
 
 def collect_runtime_port_candidates(port_name: str) -> list[str]:
-    base_candidates = get_port_candidates(port_name)
-    base_names = {Path(candidate).name for candidate in base_candidates}
-    port_infos = list(list_ports.comports())
+    requested = get_port_candidates(port_name)
+    live_requested = [port for port in requested if port_is_present(port)]
+    others: list[str] = []
 
-    for info in port_infos:
-        device = info.device
-        name = Path(device).name
-
-        if device in base_candidates:
+    for port in glob_usb_cdc_ports():
+        if port in requested or port in others:
             continue
+        if same_serial_family(port_name, port):
+            others.append(port)
 
-        same_usbmodem_family = name.startswith("tty.usbmodem") or name.startswith("cu.usbmodem")
-        shares_base = any(base_name.startswith("tty.usbmodem") or base_name.startswith("cu.usbmodem") for base_name in base_names)
-
-        if shares_base and same_usbmodem_family:
-            base_candidates.append(device)
-
+    stale_requested = [port for port in requested if port not in live_requested]
     unique: list[str] = []
-    for candidate in base_candidates:
-        if candidate not in unique:
-            unique.append(candidate)
+    for port in live_requested + others + stale_requested:
+        if port not in unique:
+            unique.append(port)
     return unique
 
 
@@ -436,7 +484,7 @@ def open_serial_with_retry(port_name: str, baud: int, timeout: float, write_time
 
     while time.monotonic() < deadline:
         for candidate in candidates:
-            if not os.path.exists(candidate):
+            if not port_is_present(candidate):
                 continue
             try:
                 port = serial.Serial(candidate, baud, timeout=timeout, write_timeout=write_timeout)
@@ -449,38 +497,58 @@ def open_serial_with_retry(port_name: str, baud: int, timeout: float, write_time
     raise TimeoutError(f"等待串口可打开超时{detail}")
 
 
+def close_serial(port: serial.Serial | None) -> None:
+    if port is None:
+        return
+    try:
+        port.close()
+    except Exception:
+        pass
+
+
 def connect_api_port(port_name: str, baud: int, wait_seconds: float, boot_wait: float, api_retries: int,
                      api_timeout: float, config_timeout: float) -> serial.Serial:
     deadline = time.monotonic() + wait_seconds
     last_error: Exception | None = None
+    settled = False
 
+    last_seen: list[str] | None = None
     while time.monotonic() < deadline:
-        candidates = collect_runtime_port_candidates(port_name)
+        candidates = [candidate for candidate in collect_runtime_port_candidates(port_name) if port_is_present(candidate)]
+        if candidates != last_seen:
+            print(f"发现串口: {candidates}" if candidates else "等待设备重新枚举...")
+            last_seen = candidates
+        if not candidates:
+            settled = False
+            time.sleep(0.8)
+            continue
+
+        if not settled:
+            print(f"等待串口稳定 {boot_wait:.0f}s...")
+            time.sleep(boot_wait)
+            settled = True
+            continue
+
         for candidate in candidates:
-            if not os.path.exists(candidate):
-                continue
+            port = None
             try:
-                port = serial.Serial(candidate, baud, timeout=0.2, write_timeout=5)
-                time.sleep(boot_wait)
-                try:
-                    ensure_api_ready(port, retries=api_retries, timeout_s=api_timeout)
-                    ensure_packet_mode(port, retries=max(2, min(api_retries, 4)), timeout_s=config_timeout)
-                    print(f"已连接设备串口 API: {candidate}")
-                    return port
-                except Exception:
-                    port.close()
-                    last_error = TimeoutError(f"{candidate} 没有返回串口 API 响应")
-            except (OSError, SerialException) as exc:
+                port = serial.Serial(candidate, baud, timeout=0.2, write_timeout=5, rtscts=False, dsrdtr=False)
+                ensure_api_ready(port, retries=api_retries, timeout_s=api_timeout)
+                ensure_packet_mode(port, retries=max(2, min(api_retries, 4)), timeout_s=config_timeout)
+                print(f"已连接设备串口 API: {candidate}")
+                return port
+            except (OSError, SerialException, TimeoutError, RuntimeError) as exc:
+                close_serial(port)
                 last_error = exc
         time.sleep(0.8)
 
     detail = f": {last_error}" if last_error else ""
-    raise TimeoutError(f"等待可用的设备串口 API 超时{detail}")
+    raise TimeoutError(f"等待可用的设备串口 API 超时{detail}; 当前串口: {glob_usb_cdc_ports()}")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Upload cjk_font.bin to external QSPI flash over Meshtastic serial API")
-    parser.add_argument("--port", required=True, help="Serial port, e.g. /dev/tty.usbmodemXXXX")
+    parser.add_argument("--port", required=True, help="Serial port, e.g. COM5 or /dev/cu.usbmodemXXXX")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--input", default="bin/cjk_font.bin", help="Path to cjk_font.bin")
     parser.add_argument("--target-name", default=TARGET_NAME.decode("utf-8"), help="Device-side XMODEM target name")
@@ -492,8 +560,8 @@ def main() -> int:
     parser.add_argument("--retries", type=int, default=8, help="Retry count for each packet")
     parser.add_argument("--erase-timeout", type=float, default=20.0, help="Timeout for the initial erase/prepare step")
     parser.add_argument("--packet-timeout", type=float, default=5.0, help="Timeout for each data packet")
-    parser.add_argument("--wait-seconds", type=float, default=20.0, help="Wait time for the serial port to reappear")
-    parser.add_argument("--boot-wait", type=float, default=3.0, help="Extra settle time after opening the serial port")
+    parser.add_argument("--wait-seconds", type=float, default=40.0, help="Wait time for the serial port to reappear")
+    parser.add_argument("--boot-wait", type=float, default=3.0, help="Settle time after the serial port reappears, before opening it")
     parser.add_argument("--config-timeout", type=float, default=15.0, help="Timeout for the initial API config handshake")
     args = parser.parse_args()
 
@@ -514,27 +582,36 @@ def main() -> int:
     print(f"串口: {args.port} @ {args.baud}")
     print(f"目标: {args.target_name}")
 
-    wait_for_port(args.port, args.wait_seconds)
-
-    with connect_api_port(
-        args.port,
-        args.baud,
-        wait_seconds=args.wait_seconds,
-        boot_wait=args.boot_wait,
-        api_retries=max(3, min(args.retries, 8)),
-        api_timeout=5.0,
-        config_timeout=args.config_timeout,
-    ) as port:
-        upload_font(
-            port,
-            blob,
-            retries=args.retries,
-            erase_timeout=args.erase_timeout,
-            packet_timeout=args.packet_timeout,
-            target_name=target_name,
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        wait_for_port(args.port, args.wait_seconds)
+        port = connect_api_port(
+            args.port,
+            args.baud,
+            wait_seconds=args.wait_seconds,
+            boot_wait=args.boot_wait,
+            api_retries=max(3, min(args.retries, 8)),
+            api_timeout=5.0,
+            config_timeout=args.config_timeout,
         )
+        try:
+            upload_font(
+                port,
+                blob,
+                retries=args.retries,
+                erase_timeout=args.erase_timeout,
+                packet_timeout=args.packet_timeout,
+                target_name=target_name,
+            )
+            return 0
+        except SerialException as exc:
+            last_error = exc
+            print(f"串口断开，正在重连 ({attempt}/3): {exc}")
+        finally:
+            close_serial(port)
+        time.sleep(2.0)
 
-    return 0
+    raise last_error if last_error else RuntimeError("上传失败")
 
 
 if __name__ == "__main__":

@@ -124,8 +124,17 @@ void XModemAdapter::handlePacket(meshtastic_XModem xmodemPacket)
     switch (xmodemPacket.control) {
     case meshtastic_XModem_Control_SOH:
     case meshtastic_XModem_Control_STX:
-        if ((xmodemPacket.seq == 0) && !isReceiving && !isTransmitting) {
-            // NULL packet has the destination filename
+        if ((xmodemPacket.seq == 0) && !isTransmitting) {
+            if (isReceiving) {
+                if (receiveTarget != ReceiveTarget::ExternalCjkFont) {
+                    spiLock->lock();
+                    file.close();
+                    spiLock->unlock();
+                }
+                isReceiving = false;
+                receiveTarget = ReceiveTarget::None;
+                receiveOffset = 0;
+            }
             memset(filename, 0, sizeof(filename));
             memcpy(filename, &xmodemPacket.buffer.bytes, xmodemPacket.buffer.size);
 
