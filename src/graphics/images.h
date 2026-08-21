@@ -257,6 +257,26 @@ const uint8_t mute_symbol_big[] PROGMEM = {0b00000001, 0b00000000, 0b11000010, 0
                                            0b00010100, 0b00000100, 0b00101000, 0b11111100, 0b00111111, 0b01000000, 0b00100010,
                                            0b10000000, 0b01000001, 0b00000000, 0b10000000};
 
+#if defined(Nodara)
+// 12x12 muted bell for Nodara header (between 8x8 and 16x16)
+#define mute_symbol_medium_width 12
+#define mute_symbol_medium_height 12
+const uint8_t mute_symbol_medium[] PROGMEM = {
+    0b00000001, 0b00000000, // █···········
+    0b01110010, 0b00000000, // ·█··███·····
+    0b10001100, 0b00000001, // ··██···██···
+    0b00001100, 0b00000001, // ··██····█···
+    0b00010100, 0b00000010, // ··█·█····█··
+    0b00100100, 0b00000010, // ··█··█···█··
+    0b01000100, 0b00000010, // ··█···█··█··
+    0b10000100, 0b00000010, // ··█····█·█··
+    0b00000010, 0b00000010, // ·█······██··
+    0b11111110, 0b00000011, // ·█████████··
+    0b01010000, 0b00000100, // ····█·█···█·
+    0b00100000, 0b00001000, // ·····█·····█
+};
+#endif
+
 // Bell icon for Alert Message
 #define bell_alert_width 8
 #define bell_alert_height 8

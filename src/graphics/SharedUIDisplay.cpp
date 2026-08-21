@@ -311,6 +311,21 @@ void drawCommonHeader(OLEDDisplay *display, int16_t x, int16_t y, const char *ti
                 display->drawXbm(iconX, iconY, mail_width, mail_height, mail);
             }
         } else if (externalNotificationModule->getMute()) {
+#if defined(Nodara)
+            int iconX = iconRightEdge - mute_symbol_medium_width;
+            int iconY = textY + (FONT_HEIGHT_SMALL - mute_symbol_medium_height) / 2;
+
+            if (isInverted && !force_no_invert) {
+                display->setColor(WHITE);
+                display->fillRect(iconX - 1, iconY - 1, mute_symbol_medium_width + 2, mute_symbol_medium_height + 2);
+                display->setColor(BLACK);
+            } else {
+                display->setColor(BLACK);
+                display->fillRect(iconX - 1, iconY - 1, mute_symbol_medium_width + 2, mute_symbol_medium_height + 2);
+                display->setColor(WHITE);
+            }
+            display->drawXbm(iconX, iconY, mute_symbol_medium_width, mute_symbol_medium_height, mute_symbol_medium);
+#else
             if (currentResolution == ScreenResolution::High) {
                 int iconX = iconRightEdge - mute_symbol_big_width;
                 int iconY = textY + (FONT_HEIGHT_SMALL - mute_symbol_big_height) / 2;
@@ -340,6 +355,7 @@ void drawCommonHeader(OLEDDisplay *display, int16_t x, int16_t y, const char *ti
                 }
                 display->drawXbm(iconX, iconY, mute_symbol_width, mute_symbol_height, mute_symbol);
             }
+#endif
         }
 
         if (show_date) {
@@ -388,6 +404,11 @@ void drawCommonHeader(OLEDDisplay *display, int16_t x, int16_t y, const char *ti
                 display->drawXbm(iconX, iconY, mail_width, mail_height, mail);
             }
         } else if (externalNotificationModule->getMute()) {
+#if defined(Nodara)
+            int iconX = iconRightEdge - mute_symbol_medium_width;
+            int iconY = textY + (FONT_HEIGHT_SMALL - mute_symbol_medium_height) / 2;
+            display->drawXbm(iconX, iconY, mute_symbol_medium_width, mute_symbol_medium_height, mute_symbol_medium);
+#else
             if (currentResolution == ScreenResolution::High) {
                 int iconX = iconRightEdge - mute_symbol_big_width;
                 int iconY = textY + (FONT_HEIGHT_SMALL - mute_symbol_big_height) / 2;
@@ -397,6 +418,7 @@ void drawCommonHeader(OLEDDisplay *display, int16_t x, int16_t y, const char *ti
                 int iconY = textY + (FONT_HEIGHT_SMALL - mail_height) / 2;
                 display->drawXbm(iconX, iconY, mute_symbol_width, mute_symbol_height, mute_symbol);
             }
+#endif
         }
     }
 #endif
