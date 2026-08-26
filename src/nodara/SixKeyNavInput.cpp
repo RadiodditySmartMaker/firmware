@@ -123,9 +123,9 @@ int32_t SixKeyNavInput::runOnce()
                 lastTime = now;
 
                 if (btn_state[BTN_NUM_MAX-1].press) {
+                    LOG_INFO("Fn + %s combo", NAV_TABLE[i].name);
                     btn_state[BTN_NUM_MAX-1].press = false;
                     btn_state[BTN_NUM_MAX-1].release = false;
-                    LOG_INFO("%s + %s BTN release", btn_state[BTN_NUM_MAX-1].press, NAV_TABLE[i].name);
                     switch (NAV_TABLE[i].evt) {
                         case INPUT_BROKER_UP: navComboUp();break;
                         case INPUT_BROKER_DOWN: navComboDown();break;

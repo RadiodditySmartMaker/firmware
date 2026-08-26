@@ -3,20 +3,17 @@
 #if defined(Nodara)
 
 /**
- * NavCombos - variant-specific combo-key behavior for eink-ra01s-gp02.
+ * NavCombos - Nodara variant combo-key handlers (Fn + direction/Enter).
  *
- * Provides the 5 combo-key handler functions to be assigned to
- * SixKeyNavInput::onCombo* function pointers in InputBroker::Init().
- *
- * All state (e.g. throttle toggle) is managed here, so SixKeyNavInput
- * and main.cpp remain decoupled from board-specific behavior.
+ * Invoked by SixKeyNavInput when Fn is held and another key is released.
+ * Cancel (Fn) alone → INPUT_BROKER_CANCEL (screen off), not handled here.
  *
  * Combo mapping:
  *   Fn + Up    → toggle Bluetooth (persistent, triggers reboot)
- *   Fn + Down  → screen off
- *   Fn + Left  → toggle LoRa radio on/off
+ *   Fn + Down  → deep sleep (INPUT_BROKER_SHUTDOWN)
+ *   Fn + Left  → unassigned
  *   Fn + Right → toggle GPS power (persistent)
- *   Fn + Enter → toggle thread throttle (NAV_THROTTLE_MS)
+ *   Fn + Enter → unassigned
  */
 
 void navComboUp();
