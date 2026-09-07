@@ -23,6 +23,9 @@
 #include "graphics/images.h"
 #include "input/SerialKeyboard.h"
 #include "main.h" // for cardkb_found
+#ifdef Nodara
+#include "mesh/ChatHistoryStore.h"
+#endif
 #include "mesh/generated/meshtastic/cannedmessages.pb.h"
 #include "modules/AdminModule.h"
 #include "modules/ExternalNotificationModule.h" // for buzzer control
@@ -1072,6 +1075,16 @@ void CannedMessageModule::sendText(NodeNum dest, ChannelIndex channel, const cha
     }
 
     this->waitingForAck = true;
+
+#ifdef Nodara
+    if (chatHistoryStore) {
+        meshtastic_MeshPacket stored = *p;
+        stored.from = nodeDB->getNodeNum();
+        chatHistoryStore->saveMeshPacket(stored);
+        if (screen)
+            screen->handleChatHistoryUpdated(stored);
+    }
+#endif
 
     // Send to mesh (PKI-encrypted if conditions above matched)
     service->sendToMesh(p, RX_SRC_LOCAL, true);
@@ -2143,6 +2156,18 @@ static const char *getSignalGrade(float snr, int32_t rssi, float snrLimit, int &
 
 ProcessMessage CannedMessageModule::handleReceived(const meshtastic_MeshPacket &mp)
 {
+#ifdef Nodara
+    // Parallel path: update CH/DM history by packet id. Does not change canned ACK banner logic.
+    if (mp.decoded.portnum == meshtastic_PortNum_ROUTING_APP && mp.to == nodeDB->getNodeNum() && mp.decoded.request_id != 0 &&
+        chatHistoryStore) {
+        meshtastic_Routing nodaraDecoded = meshtastic_Routing_init_default;
+        pb_decode_from_bytes(mp.decoded.payload.bytes, mp.decoded.payload.size, meshtastic_Routing_fields, &nodaraDecoded);
+        const bool nodaraIsAck = (nodaraDecoded.error_reason == meshtastic_Routing_Error_NONE);
+        if (chatHistoryStore->updateAckByPacketId(mp.decoded.request_id, nodaraIsAck, mp.from) && screen)
+            screen->handleChatAckUpdated();
+    }
+#endif
+
     // Only process routing ACK/NACK packets that are responses to our own outbound
     if (mp.decoded.portnum == meshtastic_PortNum_ROUTING_APP && waitingForAck && mp.to == nodeDB->getNodeNum() &&
         mp.decoded.request_id == this->lastRequestId) // only ACKs for our last sent packet

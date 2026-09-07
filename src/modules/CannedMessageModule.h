@@ -96,6 +96,11 @@ class CannedMessageModule : public SinglePortModule, public Observable<const UIF
             lastRxRssi = p->rx_rssi;
         if (p->rx_snr > 0)
             lastRxSnr = p->rx_snr;
+#ifdef Nodara
+        // CH/DM ACK updates need routing packets even when we are not waiting on a canned send.
+        if (p->decoded.portnum == meshtastic_PortNum_ROUTING_APP)
+            return true;
+#endif
         return (p->decoded.portnum == meshtastic_PortNum_ROUTING_APP) ? waitingForAck : false;
     }
 

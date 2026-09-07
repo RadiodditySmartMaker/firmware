@@ -13,8 +13,51 @@
 
 namespace
 {
-constexpr uint8_t kHistoryFileVersion = 1;
+constexpr uint8_t kHistoryFileVersionV1 = 1;
+constexpr uint8_t kHistoryFileVersion = 2;
 constexpr uint8_t kLegacyCapacity = 10;
+
+static ChatHistoryItem makeHistoryItem(const meshtastic_MeshPacket &mp)
+{
+    ChatHistoryItem item;
+    item.packet = mp;
+    item.ackStatus = AckStatus::NONE;
+    return item;
+}
+
+static bool alreadyHasPacketId(const std::vector<ChatHistoryItem> &items, uint32_t packetId)
+{
+    if (packetId == 0)
+        return false;
+    for (const auto &item : items) {
+        if (item.packet.id == packetId)
+            return true;
+    }
+    return false;
+}
+
+static AckStatus incomingAckStatus(const ChatHistoryItem &item, bool isAck, NodeNum ackFrom)
+{
+    const bool wasBroadcast = (item.packet.to == NODENUM_BROADCAST || item.packet.to == 0);
+    const bool isFromDest = (ackFrom == item.packet.to);
+    if (wasBroadcast && isAck)
+        return AckStatus::ACKED;
+    if (isFromDest && isAck)
+        return AckStatus::ACKED;
+    if (isAck)
+        return AckStatus::RELAYED;
+    return AckStatus::NACKED;
+}
+
+static bool applyIncomingAck(ChatHistoryItem &item, AckStatus incoming)
+{
+    if (item.ackStatus == AckStatus::ACKED)
+        return false;
+    if (item.ackStatus == incoming)
+        return false;
+    item.ackStatus = incoming;
+    return true;
+}
 
 // 单条消息 protobuf 编码缓冲（静态，避免启动恢复时栈溢出）
 static uint8_t packetEncodeBuf[meshtastic_MeshPacket_size];
@@ -56,7 +99,7 @@ bool ensurePrefsDir()
 #endif
 }
 
-bool writePacketHistoryFile(const char *path, const std::vector<meshtastic_MeshPacket> &messages, uint8_t maxMessages)
+bool writePacketHistoryFile(const char *path, const std::vector<ChatHistoryItem> &messages, uint8_t maxMessages)
 {
 #ifdef FSCom
     if (!ensurePrefsDir())
@@ -78,7 +121,7 @@ bool writePacketHistoryFile(const char *path, const std::vector<meshtastic_MeshP
 
     for (uint8_t i = 0; i < count; ++i) {
         size_t encodedLen = 0;
-        if (!encodeMeshPacket(messages.at(i), packetEncodeBuf, sizeof(packetEncodeBuf), encodedLen)) {
+        if (!encodeMeshPacket(messages.at(i).packet, packetEncodeBuf, sizeof(packetEncodeBuf), encodedLen)) {
             spiLock->unlock();
             LOG_WARN("ChatHistoryStore: encode failed for %s index %u", path, (unsigned)i);
             return false;
@@ -87,6 +130,7 @@ bool writePacketHistoryFile(const char *path, const std::vector<meshtastic_MeshP
         f.write((uint8_t)(leLen & 0xff));
         f.write((uint8_t)(leLen >> 8));
         f.write(packetEncodeBuf, encodedLen);
+        f.write(static_cast<uint8_t>(messages.at(i).ackStatus));
     }
     spiLock->unlock();
 
@@ -102,7 +146,7 @@ bool writePacketHistoryFile(const char *path, const std::vector<meshtastic_MeshP
 }
 
 // 将历史文件读入 dest；返回成功加载的条数（0 表示失败或空文件）
-uint8_t loadPacketHistoryInto(std::vector<meshtastic_MeshPacket> &dest, const char *path, uint8_t maxMessages)
+uint8_t loadPacketHistoryInto(std::vector<ChatHistoryItem> &dest, const char *path, uint8_t maxMessages)
 {
 #ifdef FSCom
     dest.clear();
@@ -122,7 +166,7 @@ uint8_t loadPacketHistoryInto(std::vector<meshtastic_MeshPacket> &dest, const ch
     }
 
     uint8_t version = 0;
-    if (f.readBytes((char *)&version, 1) != 1 || version != kHistoryFileVersion) {
+    if (f.readBytes((char *)&version, 1) != 1 || (version != kHistoryFileVersion && version != kHistoryFileVersionV1)) {
         f.close();
         return 0;
     }
@@ -152,9 +196,17 @@ uint8_t loadPacketHistoryInto(std::vector<meshtastic_MeshPacket> &dest, const ch
         if (!decodeMeshPacket(packetEncodeBuf, encodedLen, mp))
             continue;
 
+        ChatHistoryItem item = makeHistoryItem(mp);
+        if (version >= kHistoryFileVersion) {
+            uint8_t ackByte = 0;
+            if (f.readBytes((char *)&ackByte, 1) != 1)
+                break;
+            item.ackStatus = static_cast<AckStatus>(ackByte);
+        }
+
         if (dest.size() >= maxMessages)
             dest.erase(dest.begin());
-        dest.push_back(mp);
+        dest.push_back(item);
         loaded++;
     }
 
@@ -279,11 +331,14 @@ void ChatHistoryStore::pushChannelPacket(uint8_t channelIndex, const meshtastic_
     if (channelIndex >= kMaxChannels)
         return;
 
+    if (alreadyHasPacketId(channelPackets[channelIndex], mp.id))
+        return;
+
     // 固定容量环形语义：满了就丢弃最旧的一条，保留最近消息。
     if (channelPackets[channelIndex].size() >= kChannelMessageCapacity)
         channelPackets[channelIndex].erase(channelPackets[channelIndex].begin());
 
-    channelPackets[channelIndex].push_back(mp);
+    channelPackets[channelIndex].push_back(makeHistoryItem(mp));
 }
 
 void ChatHistoryStore::markChannelDirty(uint8_t channelIndex)
@@ -362,15 +417,15 @@ void ChatHistoryStore::persistToDisk()
 
 void ChatHistoryStore::saveMeshPacket(const meshtastic_MeshPacket &mp)
 {
-    if (mp.channel >= kMaxChannels) {
-        LOG_INFO("ChatHistoryStore: incorrect mp.channel = 0x%x!", mp.channel);
+    // direct message 使用私信列表保存；广播消息按频道保存。
+    // 收包路径只更新 RAM，落盘推迟到 persistToDisk()（关机/睡眠/重启）。
+    if (mp.to != NODENUM_BROADCAST && mp.to != 0) {
+        pushDirectMessage(mp);
         return;
     }
 
-    // direct message 使用私信列表保存；广播消息按频道保存。
-    // 收包路径只更新 RAM，落盘推迟到 persistToDisk()（关机/睡眠/重启）。
-    if (mp.to != NODENUM_BROADCAST) {
-        pushDirectMessage(mp);
+    if (mp.channel >= kMaxChannels) {
+        LOG_INFO("ChatHistoryStore: incorrect mp.channel = 0x%x!", mp.channel);
         return;
     }
 
@@ -424,10 +479,16 @@ void ChatHistoryStore::restoreDirectMessages()
         uint8_t loaded = loadPacketHistoryInto(nodeMessages, path, kDirectMessageCapacity);
         if (loaded > 0) {
             LOG_INFO("restored %u DM(s) for node 0x%08x", (unsigned)loaded, nodeNum);
-        } else if (restoreLegacyDirectMessages(nodeNum, nodeMessages)) {
-            writePacketHistoryFile(path, nodeMessages, kDirectMessageCapacity);
-            deleteLegacyDmPacketFiles(nodeNum);
-            LOG_INFO("migrated %u legacy DM(s) for node 0x%08x", (unsigned)nodeMessages.size(), nodeNum);
+        } else {
+            std::vector<meshtastic_MeshPacket> legacy;
+            if (restoreLegacyDirectMessages(nodeNum, legacy)) {
+                nodeMessages.clear();
+                for (const auto &mp : legacy)
+                    nodeMessages.push_back(makeHistoryItem(mp));
+                writePacketHistoryFile(path, nodeMessages, kDirectMessageCapacity);
+                deleteLegacyDmPacketFiles(nodeNum);
+                LOG_INFO("migrated %u legacy DM(s) for node 0x%08x", (unsigned)nodeMessages.size(), nodeNum);
+            }
         }
     }
 
@@ -471,7 +532,14 @@ meshtastic_MeshPacket ChatHistoryStore::getRecentMeshPacket(uint8_t channel, uin
         return emptyPacket;
     }
 
-    return channelPackets[channel].at(recentIndex);
+    return channelPackets[channel].at(recentIndex).packet;
+}
+
+AckStatus ChatHistoryStore::getRecentMeshPacketAck(uint8_t channel, uint8_t recentIndex) const
+{
+    if ((channel >= kMaxChannels) || (recentIndex >= channelPackets[channel].size()))
+        return AckStatus::NONE;
+    return channelPackets[channel].at(recentIndex).ackStatus;
 }
 
 int ChatHistoryStore::getMeshPacketListSize(uint8_t channel) const
@@ -498,11 +566,14 @@ void ChatHistoryStore::pushDirectMessage(const meshtastic_MeshPacket &mp)
         return;
 
     auto &nodeMessages = directMessagesByNode[otherNode];
+    if (alreadyHasPacketId(nodeMessages, mp.id))
+        return;
+
     // 每个对端只保留最近 kDirectMessageCapacity 条，避免长期占用过多 RAM/文件。
     if (nodeMessages.size() >= kDirectMessageCapacity)
         nodeMessages.erase(nodeMessages.begin());
 
-    nodeMessages.push_back(mp);
+    nodeMessages.push_back(makeHistoryItem(mp));
     markDmNodeDirty(otherNode);
 
     if (currentDirectMessageNode == 0) {
@@ -539,7 +610,19 @@ meshtastic_MeshPacket ChatHistoryStore::getRecentDirectMessage(uint8_t recentInd
         return emptyPacket;
     }
 
-    return it->second.at(recentIndex);
+    return it->second.at(recentIndex).packet;
+}
+
+AckStatus ChatHistoryStore::getRecentDirectMessageAck(uint8_t recentIndex) const
+{
+    if (currentDirectMessageNode == 0)
+        return AckStatus::NONE;
+
+    auto it = directMessagesByNode.find(currentDirectMessageNode);
+    if (it == directMessagesByNode.end() || recentIndex >= it->second.size())
+        return AckStatus::NONE;
+
+    return it->second.at(recentIndex).ackStatus;
 }
 
 int ChatHistoryStore::getDirectMessageListSize() const
@@ -591,6 +674,36 @@ int ChatHistoryStore::getDirectMessageNodeCount() const
             count++;
     }
     return count;
+}
+
+bool ChatHistoryStore::updateAckByPacketId(uint32_t packetId, bool isAck, NodeNum ackFrom)
+{
+    if (packetId == 0)
+        return false;
+
+    for (uint8_t channelIndex = 0; channelIndex < kMaxChannels; ++channelIndex) {
+        for (auto &item : channelPackets[channelIndex]) {
+            if (item.packet.id != packetId)
+                continue;
+            if (!applyIncomingAck(item, incomingAckStatus(item, isAck, ackFrom)))
+                return true;
+            markChannelDirty(channelIndex);
+            return true;
+        }
+    }
+
+    for (auto &pair : directMessagesByNode) {
+        for (auto &item : pair.second) {
+            if (item.packet.id != packetId)
+                continue;
+            if (!applyIncomingAck(item, incomingAckStatus(item, isAck, ackFrom)))
+                return true;
+            markDmNodeDirty(pair.first);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void ChatHistoryStore::deleteCurrentDirectMessage()

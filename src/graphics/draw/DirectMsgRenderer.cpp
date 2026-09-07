@@ -8,6 +8,7 @@
 #include "graphics/SharedUIDisplay.h"
 #include "graphics/TimeFormatters.h"
 #include "graphics/draw/DrawCjkFont.h"
+#include "graphics/draw/MessageRenderer.h"
 #include "graphics/draw/UIRenderer.h"
 #include "graphics/fonts/OLEDDisplayFontsDL.h"
 #include "main.h"
@@ -141,21 +142,28 @@ void drawDirectMessageFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int
     int32_t daysAgo;
     bool useTimestamp = deltaToTimestamp(seconds, &timestampHours, &timestampMinutes, &daysAgo);
 
+    const AckStatus ack = chatHistoryStore->getRecentDirectMessageAck(msgIndex);
+    constexpr int kAckMarkSize = 8;
+    const int ackPad = (isFromMe && ack != AckStatus::NONE) ? (kAckMarkSize + 4) : 0;
+    if (ackPad) {
+        MessageRenderer::drawAckStatusMark(display, x, y, ack, kAckMarkSize);
+    }
+
     // If bold, draw twice, shifting right by one pixel
     for (uint8_t xOff = 0; xOff <= (config.display.heading_bold ? 1 : 0); xOff++) {
         // Show a timestamp if received today, but longer than 15 minutes ago
         if (useTimestamp && minutes >= 15 && daysAgo == 0) {
-            display->drawStringf(xOff + x, 0 + y, tempBuf, "At %02hu:%02hu %s", timestampHours, timestampMinutes,
+            display->drawStringf(xOff + x + ackPad, 0 + y, tempBuf, "At %02hu:%02hu %s", timestampHours, timestampMinutes,
                                  isFromMe ? "(sent)" : "(received)");
         }
         // Timestamp yesterday (if display is wide enough)
         else if (useTimestamp && daysAgo == 1 && display->width() >= 200) {
-            display->drawStringf(xOff + x, 0 + y, tempBuf, "Yesterday %02hu:%02hu %s", timestampHours, timestampMinutes,
+            display->drawStringf(xOff + x + ackPad, 0 + y, tempBuf, "Yesterday %02hu:%02hu %s", timestampHours, timestampMinutes,
                                  isFromMe ? "(sent)" : "(received)");
         }
         // Otherwise, show a time delta
         else {
-            display->drawStringf(xOff + x, 0 + y, tempBuf, "%s ago %s",
+            display->drawStringf(xOff + x + ackPad, 0 + y, tempBuf, "%s ago %s",
                                  UIRenderer::drawTimeDelta(days, hours, minutes, seconds).c_str(),
                                  isFromMe ? "(sent)" : "(received)");
         }

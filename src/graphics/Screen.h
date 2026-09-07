@@ -370,6 +370,7 @@ class Screen : public concurrency::OSThread
 
 #ifdef Nodara
     void handleChatHistoryUpdated(const meshtastic_MeshPacket &packet);
+    void handleChatAckUpdated();
 #endif
 
     /// Overrides the default utf8 character conversion, to replace empty space with question marks

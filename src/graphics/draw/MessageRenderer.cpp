@@ -243,6 +243,27 @@ static void drawRelayMark(OLEDDisplay *display, int x, int y, int size = 8)
     display->drawLine(centerX - 1, centerY - 4, centerX + 1, centerY - 4);
 }
 
+#ifdef Nodara
+void drawAckStatusMark(OLEDDisplay *display, int x, int y, AckStatus status, int size)
+{
+    switch (status) {
+    case AckStatus::ACKED:
+        drawCheckMark(display, x, y, size);
+        break;
+    case AckStatus::NACKED:
+    case AckStatus::TIMEOUT:
+        drawXMark(display, x, y, size);
+        break;
+    case AckStatus::RELAYED:
+        drawRelayMark(display, x, y, size);
+        break;
+    case AckStatus::NONE:
+    default:
+        break;
+    }
+}
+#endif
+
 static inline int getRenderedLineWidth(OLEDDisplay *display, const std::string &line, const Emote *emotes, int emoteCount)
 {
     return graphics::EmoteRenderer::analyzeLine(display, line, 0, emotes, emoteCount).width;

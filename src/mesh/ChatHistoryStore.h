@@ -1,9 +1,16 @@
 #pragma once
 
+#include "configuration.h"
+#include "MessageStore.h"
 #include "NodeDB.h"
 #include "mesh/generated/meshtastic/mesh.pb.h"
 #include <map>
 #include <vector>
+
+struct ChatHistoryItem {
+    meshtastic_MeshPacket packet;
+    AckStatus ackStatus = AckStatus::NONE;
+};
 
 class ChatHistoryStore
 {
@@ -16,6 +23,7 @@ class ChatHistoryStore
     bool isMeshPacketListEmpty(uint8_t channel) const;
     void saveMeshPacket(const meshtastic_MeshPacket &mp);
     meshtastic_MeshPacket getRecentMeshPacket(uint8_t channel, uint8_t recentIndex) const;
+    AckStatus getRecentMeshPacketAck(uint8_t channel, uint8_t recentIndex) const;
     int getMeshPacketListSize(uint8_t channel) const;
 
     void restoreChannelPackets();
@@ -27,6 +35,7 @@ class ChatHistoryStore
     bool isDirectMessageListEmpty() const;
     bool isDirectMessageListEmptyForNode(NodeNum nodeNum) const;
     meshtastic_MeshPacket getRecentDirectMessage(uint8_t recentIndex) const;
+    AckStatus getRecentDirectMessageAck(uint8_t recentIndex) const;
     int getDirectMessageListSize() const;
     int getDirectMessageListSizeForNode(NodeNum nodeNum) const;
     void setCurrentDirectMessageNode(NodeNum nodeNum);
@@ -38,6 +47,9 @@ class ChatHistoryStore
     void deleteCurrentDirectMessage();
     void deleteAllDirectMessagesForNode(NodeNum nodeNum);
 
+    // Match ROUTING_APP request_id to a stored packet and upgrade its delivery status.
+    bool updateAckByPacketId(uint32_t packetId, bool isAck, NodeNum ackFrom);
+
     // 将内存中未落盘的历史写入 flash（关机/睡眠/重启前调用）。
     void persistToDisk();
 
@@ -47,9 +59,9 @@ class ChatHistoryStore
     static constexpr uint8_t kDirectMessageCapacity = 10;
 
     // channelPackets 使用真实 channel index(0~7) 作为数组索引。
-    std::vector<meshtastic_MeshPacket> channelPackets[kMaxChannels];
+    std::vector<ChatHistoryItem> channelPackets[kMaxChannels];
     // directMessagesByNode 的 key 是聊天对端节点，不区分消息收/发方向。
-    std::map<NodeNum, std::vector<meshtastic_MeshPacket>> directMessagesByNode;
+    std::map<NodeNum, std::vector<ChatHistoryItem>> directMessagesByNode;
     NodeNum currentDirectMessageNode = 0;
     uint8_t currentDirectMessageIndex = 0;
 

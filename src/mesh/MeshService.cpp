@@ -14,6 +14,9 @@
 #include "TypeConversions.h"
 #include "graphics/draw/MessageRenderer.h"
 #include "main.h"
+#ifdef Nodara
+#include "mesh/ChatHistoryStore.h"
+#endif
 #include "mesh-pb-constants.h"
 #include "meshUtils.h"
 #include "modules/NodeInfoModule.h"
@@ -200,6 +203,13 @@ void MeshService::handleToRadio(meshtastic_MeshPacket &p)
                   perhapsDecode(&p);
                   const StoredMessage &sm = messageStore.addFromPacket(p);
                   graphics::MessageRenderer::handleNewMessage(nullptr, sm, p); // notify UI
+#ifdef Nodara
+                  if (chatHistoryStore) {
+                      chatHistoryStore->saveMeshPacket(p);
+                      if (screen)
+                          screen->handleChatHistoryUpdated(p);
+                  }
+#endif
               })
     // Send the packet into the mesh
     DEBUG_HEAP_BEFORE;

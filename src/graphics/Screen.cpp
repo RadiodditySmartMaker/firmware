@@ -1716,6 +1716,20 @@ void Screen::handleChatHistoryUpdated(const meshtastic_MeshPacket &packet)
         runNow();
     }
 }
+
+void Screen::handleChatAckUpdated()
+{
+    if (!showingNormalScreen) {
+        return;
+    }
+
+    const uint8_t currentFrame = ui->getUiState()->currentFrame;
+    const bool isChannelFrame = graphics::ChannelMessageRenderer::isBrowsingChannelPacketFrame(currentFrame);
+    const bool isDirectMessageFrame = (currentFrame == framesetInfo.positions.textMessage);
+    if (isChannelFrame || isDirectMessageFrame) {
+        runNow();
+    }
+}
 #endif
 #ifndef SCREEN_TRANSITION_FRAMERATE
 #define SCREEN_TRANSITION_FRAMERATE 30 // fps
