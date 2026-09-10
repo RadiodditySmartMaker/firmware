@@ -382,12 +382,22 @@ void EInkDynamicDisplay::resetRateLimiting()
 // Generate a hash of this frame, to compare against previous update
 void EInkDynamicDisplay::hashImage()
 {
+#ifdef Nodara
+    // FNV-1a over the full OLED buffer. The original `buffer[b] << b` is 0 for
+    // b>=32 on ARM, so list rows below the header hashed as identical.
+    imageHash = 2166136261u;
+    for (uint32_t b = 0; b < displayBufferSize; b++) {
+        imageHash ^= buffer[b];
+        imageHash *= 16777619u;
+    }
+#else
     imageHash = 0;
 
     // Sum all bytes of the image buffer together
     for (uint16_t b = 0; b < (displayWidth / 8) * displayHeight; b++) {
         imageHash ^= buffer[b] << b;
     }
+#endif
 }
 
 // Store the results of determineMode() for future use, and reset for next call
