@@ -215,7 +215,11 @@ void MeshService::handleToRadio(meshtastic_MeshPacket &p)
     DEBUG_HEAP_BEFORE;
     auto a = packetPool.allocCopy(p);
     DEBUG_HEAP_AFTER("MeshService::handleToRadio", a);
+#ifdef Nodara
+    sendToMesh(a, RX_SRC_USER, p.decoded.portnum == meshtastic_PortNum_TELEMETRY_APP);
+#else
     sendToMesh(a, RX_SRC_USER);
+#endif
 
     bool loopback = false; // if true send any packet the phone sends back itself (for testing)
     if (loopback) {

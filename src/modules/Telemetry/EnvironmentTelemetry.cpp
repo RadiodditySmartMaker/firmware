@@ -22,18 +22,18 @@
 #include "target_specific.h"
 #include <OLEDDisplay.h>
 
+namespace graphics
+{
+extern void drawCommonHeader(OLEDDisplay *display, int16_t x, int16_t y, const char *titleStr, bool force_no_invert,
+                             bool show_date);
+}
+
 #if !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL
 
 // Sensors
 #include "Sensor/CGRadSensSensor.h"
 #include "Sensor/RCWL9620Sensor.h"
 #include "Sensor/nullSensor.h"
-
-namespace graphics
-{
-extern void drawCommonHeader(OLEDDisplay *display, int16_t x, int16_t y, const char *titleStr, bool force_no_invert,
-                             bool show_date);
-}
 #if __has_include(<Adafruit_AHTX0.h>)
 #include "Sensor/AHT10.h"
 #endif
@@ -166,8 +166,10 @@ void EnvironmentTelemetryModule::i2cScanFinished(ScanI2C *i2cScanner)
     // Not a real I2C device, uses UART
     addSensor<IndicatorSensor>(i2cScanner, ScanI2C::DeviceType::NONE);
 #endif
+#if !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL
     addSensor<RCWL9620Sensor>(i2cScanner, ScanI2C::DeviceType::RCWL9620);
     addSensor<CGRadSensSensor>(i2cScanner, ScanI2C::DeviceType::CGRADSENS);
+#endif
 #endif
 #endif
 

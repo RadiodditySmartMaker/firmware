@@ -258,9 +258,8 @@ static const uint8_t A0 = PIN_BATTERY_ADC;
 // #define BLE_ADV_FAST_TIMEOUT_S      0       // Skip fast mode, use slow immediately
 
 // ---------------------------------------------------------------------------
-// No external sensors or motion hardware
+// Environment telemetry is display-only (USB-injected). No onboard I2C sensors.
 // ---------------------------------------------------------------------------
-#define MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR        1
 #define MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL 1
 #define MESHTASTIC_EXCLUDE_POWER_TELEMETRY             1
 #define MESHTASTIC_EXCLUDE_AIR_QUALITY_SENSOR          1
