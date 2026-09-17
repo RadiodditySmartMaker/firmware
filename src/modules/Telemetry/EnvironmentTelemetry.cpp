@@ -347,7 +347,11 @@ int32_t EnvironmentTelemetryModule::runOnce()
 
 bool EnvironmentTelemetryModule::wantUIFrame()
 {
+#ifdef NODARA_USB_INJECTED_TELEMETRY
+    return true;
+#else
     return moduleConfig.telemetry.environment_screen_enabled;
+#endif
 }
 
 #if HAS_SCREEN

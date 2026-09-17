@@ -189,7 +189,7 @@ void setupModules()
     new DeviceTelemetryModule();
 #endif
 #if HAS_TELEMETRY && HAS_SENSOR && !MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR
-#ifdef Nodara
+#ifdef NODARA_USB_INJECTED_TELEMETRY
     new EnvironmentTelemetryModule();
 #else
     if (moduleConfig.has_telemetry &&

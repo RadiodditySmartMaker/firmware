@@ -835,7 +835,7 @@ void NodeDB::installDefaultModuleConfig()
     moduleConfig.has_serial = true;
     moduleConfig.has_store_forward = true;
     moduleConfig.has_telemetry = true;
-#ifdef Nodara
+#ifdef NODARA_USB_INJECTED_TELEMETRY
     moduleConfig.telemetry.environment_screen_enabled = true;
 #endif
     moduleConfig.has_external_notification = true;

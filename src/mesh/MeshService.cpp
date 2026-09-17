@@ -211,12 +211,19 @@ void MeshService::handleToRadio(meshtastic_MeshPacket &p)
                   }
 #endif
               })
+#ifdef NODARA_USB_INJECTED_TELEMETRY
+    // USB-injected telemetry must carry this node's id so the local screen/app keep it.
+    const bool ccTelemetryToPhone = p.decoded.portnum == meshtastic_PortNum_TELEMETRY_APP;
+    if (ccTelemetryToPhone) {
+        p.from = nodeDB->getNodeNum();
+    }
+#endif
     // Send the packet into the mesh
     DEBUG_HEAP_BEFORE;
     auto a = packetPool.allocCopy(p);
     DEBUG_HEAP_AFTER("MeshService::handleToRadio", a);
-#ifdef Nodara
-    sendToMesh(a, RX_SRC_USER, p.decoded.portnum == meshtastic_PortNum_TELEMETRY_APP);
+#ifdef NODARA_USB_INJECTED_TELEMETRY
+    sendToMesh(a, RX_SRC_USER, ccTelemetryToPhone);
 #else
     sendToMesh(a, RX_SRC_USER);
 #endif

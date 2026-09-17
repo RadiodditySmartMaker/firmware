@@ -260,6 +260,7 @@ static const uint8_t A0 = PIN_BATTERY_ADC;
 // ---------------------------------------------------------------------------
 // Environment telemetry is display-only (USB-injected). No onboard I2C sensors.
 // ---------------------------------------------------------------------------
+#define NODARA_USB_INJECTED_TELEMETRY 1
 #define MESHTASTIC_EXCLUDE_ENVIRONMENTAL_SENSOR_EXTERNAL 1
 #define MESHTASTIC_EXCLUDE_POWER_TELEMETRY             1
 #define MESHTASTIC_EXCLUDE_AIR_QUALITY_SENSOR          1
