@@ -91,6 +91,8 @@ void drawChannelTextMessageFrame(OLEDDisplay *display, OLEDDisplayUiState *state
     int width = display->getWidth();
     int height = display->getHeight();
 #ifdef Nodara
+    // Clear the unread mail icon once this page is on screen
+    hasUnreadMessage = false;
 
 #if HAS_SCREEN
     uint8_t currentRotation = (width < height) ? 0 : 3;
@@ -166,31 +168,40 @@ void drawChannelTextMessageFrame(OLEDDisplay *display, OLEDDisplayUiState *state
             snprintf(displayName, sizeof(displayName), "Sec Ch: %s", name);
     }
 
+    uint16_t packetListSize = 0;
+    if (chatHistoryStore) {
+        packetListSize = chatHistoryStore->getMeshPacketListSize(localActualChannelIndex);
+    }
+    if (packetListSize > 0 && channelPacketBrowseIndex >= packetListSize) {
+        channelPacketBrowseIndex = packetListSize - 1;
+    }
+
+    const int rowY = y + selectedFontHeight;
+    char indexLabel[12] = "";
+    int indexWidth = 0;
+    if (packetListSize > 0) {
+        snprintf(indexLabel, sizeof(indexLabel), "%u/%u", (unsigned)channelPacketBrowseIndex + 1, (unsigned)packetListSize);
+        indexWidth = display->getStringWidth(indexLabel) + 6;
+        display->setTextAlignment(TEXT_ALIGN_RIGHT);
+        display->drawString(x + width - 2, rowY, indexLabel);
+    }
+
+    int nameMaxWidth = width - 7 - indexWidth;
+    if (nameMaxWidth < 0)
+        nameMaxWidth = 0;
+    char nameBuf[32];
+    UIRenderer::truncateStringWithEmotes(display, displayName, nameBuf, sizeof(nameBuf), nameMaxWidth);
+
     display->setTextAlignment(TEXT_ALIGN_LEFT);
-
-    display->drawString(x + 5, y + selectedFontHeight, displayName);
-
-    display->setTextAlignment(TEXT_ALIGN_RIGHT);
+    display->drawString(x + 5, rowY, nameBuf);
 
     display->drawLine(x, y + selectedFontHeight * 2, x + width, y + selectedFontHeight * 2);
     y += selectedFontHeight * 2;
 
     display->setTextAlignment(TEXT_ALIGN_LEFT);
 
-    // display packet info
-    // uint8_t direction = 0;
-    if (!chatHistoryStore) {
-        return;
-    }
-
-    uint16_t packetListSize = chatHistoryStore->getMeshPacketListSize(localActualChannelIndex);
-
     if (packetListSize == 0) {
         return;
-    }
-
-    if (channelPacketBrowseIndex >= packetListSize) {
-        channelPacketBrowseIndex = packetListSize - 1;
     }
 
     const meshtastic_MeshPacket &mp = chatHistoryStore->getRecentMeshPacket(localActualChannelIndex, channelPacketBrowseIndex);

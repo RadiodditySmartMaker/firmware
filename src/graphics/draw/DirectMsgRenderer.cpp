@@ -48,6 +48,9 @@ void drawDirectMessageFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int
     int width = display->getWidth();
     int height = display->getHeight();
 #ifdef Nodara
+    // Clear the unread mail icon once this page is on screen
+    hasUnreadMessage = false;
+
 #if HAS_SCREEN
     display->setTextAlignment(TEXT_ALIGN_LEFT);
     uint8_t currentRotation = (width < height) ? 0 : 3;
@@ -83,16 +86,13 @@ void drawDirectMessageFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int
     }
 
     drawCommonHeader(display, x, y, title, false);
-    // 获取当前节点的消息列表大小
     uint16_t directMsgListSize = chatHistoryStore->getDirectMessageListSizeForNode(currentNode);
     uint8_t msgIndex = chatHistoryStore->getCurrentDirectMessageIndex();
-    const meshtastic_MeshPacket &mp = chatHistoryStore->getRecentDirectMessage(msgIndex);
-
-    // 确保索引有效
-    if (msgIndex >= directMsgListSize) {
+    if (directMsgListSize > 0 && msgIndex >= directMsgListSize) {
         msgIndex = directMsgListSize - 1;
         chatHistoryStore->setCurrentDirectMessageIndex(msgIndex);
     }
+    const meshtastic_MeshPacket &mp = chatHistoryStore->getRecentDirectMessage(msgIndex);
 
     // 获取发送者或接收者信息
     meshtastic_NodeInfoLite *fromNode = nodeDB->getMeshNode(getFrom(&mp));
@@ -122,10 +122,22 @@ void drawDirectMessageFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int
         }
     }
 
-    display->setTextAlignment(TEXT_ALIGN_LEFT);
-    display->drawString(x + 5, y + selectedFontHeight, displayName);
-
+    const int rowY = y + selectedFontHeight;
+    char indexLabel[12];
+    snprintf(indexLabel, sizeof(indexLabel), "%u/%u", (unsigned)msgIndex + 1, (unsigned)directMsgListSize);
+    const int indexWidth = display->getStringWidth(indexLabel) + 6;
     display->setTextAlignment(TEXT_ALIGN_RIGHT);
+    display->drawString(x + width - 2, rowY, indexLabel);
+
+    int nameMaxWidth = width - 7 - indexWidth;
+    if (nameMaxWidth < 0)
+        nameMaxWidth = 0;
+    char nameBuf[40];
+    UIRenderer::truncateStringWithEmotes(display, displayName, nameBuf, sizeof(nameBuf), nameMaxWidth);
+
+    display->setTextAlignment(TEXT_ALIGN_LEFT);
+    display->drawString(x + 5, rowY, nameBuf);
+
     display->drawLine(x, y + selectedFontHeight * 2, x + width, y + selectedFontHeight * 2);
     y += selectedFontHeight * 2;
 
