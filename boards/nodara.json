@@ -46,6 +46,6 @@
     "require_upload_port": true,
     "wait_for_upload_port": true
   },
-  "url": "https://github.com/stevesu309/firmware/blob/new_origin_maste",
+  "url": "https://github.com/RadiodditySmartMaker/firmware/tree/nodara-dev",
   "vendor": "Nodara"
 }
