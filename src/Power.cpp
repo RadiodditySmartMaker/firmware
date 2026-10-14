@@ -848,6 +848,7 @@ void Power::readPowerStatus()
     OptionalBool hasBattery = OptUnknown; // These must be static because NRF_APM
                                           // code doesn't run every time
     OptionalBool isChargingNow = OptUnknown;
+    static bool lowBatteryOnePercentLogged = false;
 
     if (batteryLevel) {
         hasBattery = batteryLevel->isBatteryConnect() ? OptTrue : OptFalse;
@@ -908,6 +909,7 @@ void Power::readPowerStatus()
         lastLogTime = millis();
     }
     newStatus.notifyObservers(&powerStatus2);
+
 #ifdef DEBUG_HEAP
     if (lastheap != memGet.getFreeHeap()) {
         // Use stack-allocated buffer to avoid heap allocations in monitoring code

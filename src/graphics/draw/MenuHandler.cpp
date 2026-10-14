@@ -22,6 +22,9 @@
 #include "modules/CannedMessageModule.h"
 #include "modules/ExternalNotificationModule.h"
 #include "modules/KeyVerificationModule.h"
+#ifdef Nodara
+#include "graphics/draw/NotificationRenderer.h"
+#endif
 #include "modules/TraceRouteModule.h"
 #include <algorithm>
 #include <array>
@@ -86,6 +89,12 @@ void menuHandler::loraMenu()
     };
     screen->showOverlayBanner(bannerOptions);
 }
+
+#ifdef Nodara
+static char pendingConfirmMessage[256];
+static std::function<void()> pendingConfirmCallback;
+
+#endif
 
 void menuHandler::OnboardMessage()
 {
@@ -377,14 +386,34 @@ void menuHandler::twelveHourPicker()
 // Reusable confirmation prompt function
 void menuHandler::showConfirmationBanner(const char *message, std::function<void()> onConfirm)
 {
+    LOG_INFO("showConfirmationBanner called with message: %s", message);
+
+#ifdef Nodara
+    if (NotificationRenderer::isOverlayBannerShowing()) {
+        LOG_INFO("showConfirmationBanner: Overlay banner showing, using menuQueue mechanism");
+        strncpy(pendingConfirmMessage, message, sizeof(pendingConfirmMessage) - 1);
+        pendingConfirmMessage[sizeof(pendingConfirmMessage) - 1] = '\0';
+        pendingConfirmCallback = onConfirm;
+        menuHandler::menuQueue = menuHandler::confirmation_dialog_menu;
+        screen->runNow();
+        return;
+    }
+#endif
+
+    // 直接显示确认对话框（没有 overlay banner 显示时，如 CannedMessageModule）
     static const char *confirmOptions[] = {"No", "Yes"};
     BannerOverlayOptions confirmBanner;
     confirmBanner.message = message;
     confirmBanner.optionsArrayPtr = confirmOptions;
     confirmBanner.optionsCount = 2;
+    confirmBanner.InitialSelected = 0;
     confirmBanner.bannerCallback = [onConfirm](int confirmSelected) -> void {
+        LOG_INFO("Confirmation banner callback: selected=%d (0=No, 1=Yes)", confirmSelected);
         if (confirmSelected == 1) {
+            LOG_INFO("User confirmed, executing callback");
             onConfirm();
+        } else {
+            LOG_INFO("User cancelled (selected No)");
         }
     };
     screen->showOverlayBanner(confirmBanner);
@@ -657,6 +686,7 @@ void menuHandler::replyMenu()
         // Preset reply
         if (selected == ReplyPreset) {
 
+
             if (mode == graphics::MessageRenderer::ThreadMode::CHANNEL) {
                 cannedMessageModule->LaunchWithDestination(NODENUM_BROADCAST, ch);
 
@@ -677,6 +707,7 @@ void menuHandler::replyMenu()
 
         // Freetext reply
         if (selected == ReplyFreetext) {
+
 
             if (mode == graphics::MessageRenderer::ThreadMode::CHANNEL) {
                 cannedMessageModule->LaunchFreetextWithDestination(NODENUM_BROADCAST, ch);
@@ -936,7 +967,7 @@ void menuHandler::homeBaseMenu()
         }
         optionsEnumArray[options++] = Mute;
     }
-#if defined(PIN_EINK_EN) || defined(PCA_PIN_EINK_EN)
+#if (defined(PIN_EINK_EN) || defined(PCA_PIN_EINK_EN))
     optionsArray[options] = "Toggle Backlight";
     optionsEnumArray[options++] = Backlight;
 #else
@@ -2803,8 +2834,16 @@ void menuHandler::handleMenuSwitch(OLEDDisplay *display)
     case MessageBubblesMenu:
         messageBubblesMenu();
         break;
+#ifdef Nodara
+    case confirmation_dialog_menu:
+        LOG_INFO("handleMenuSwitch: Processing confirmation_dialog_menu");
+        showConfirmationBanner(pendingConfirmMessage, pendingConfirmCallback);
+        LOG_INFO("handleMenuSwitch: showConfirmationBanner called");
+        break;
+#endif
     }
     menuQueue = MenuNone;
+
 }
 
 void menuHandler::saveUIConfig()

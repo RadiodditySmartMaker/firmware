@@ -29,6 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #if HAS_SCREEN
 #include "EInkParallelDisplay.h"
 #include <OLEDDisplay.h>
+#if defined(Nodara)
+#include "EInkDisplay2.h"
+#include "PowerFSM.h"
+#endif // Nodara
 
 #include "DisplayFormatters.h"
 #include "TimeFormatters.h"
@@ -209,6 +213,13 @@ void Screen::showSimpleBanner(const char *message, uint32_t durationMs)
 // Called to trigger a banner with custom message and duration
 void Screen::showOverlayBanner(BannerOverlayOptions banner_overlay_options)
 {
+#if defined(Nodara)
+    // Hard power-off guard: SPI1 is closed when screenOn==false.
+    // Any ui->update() or EINK_ADD_FRAMEFLAG while SPI1 is down → Hard Fault.
+    // Wake the panel synchronously first; if it's already on this is a no-op.
+    if (!screenOn)
+        handleSetOn(true);
+#endif // Nodara
 #ifdef USE_EINK
     EINK_ADD_FRAMEFLAG(dispdev, DEMAND_FAST); // Skip full refresh for all overlay menus
 #endif
@@ -374,6 +385,7 @@ float Screen::estimatedHeading(double lat, double lon)
 
 /// We will skip one node - the one for us, so we just blindly loop over all
 /// nodes
+static size_t nodeIndex;
 static int8_t prevFrame = -1;
 
 // Combined dynamic node list frame cycling through LastHeard, HopSignal, and Distance modes
@@ -499,6 +511,7 @@ Screen::~Screen()
  */
 void Screen::doDeepSleep()
 {
+    LOG_INFO("doDeepSleep");
 #ifdef USE_EINK
     setOn(false, graphics::UIRenderer::drawDeepSleepFrame);
 #else
@@ -519,6 +532,10 @@ void Screen::handleSetOn(bool on, FrameCallback einkScreensaver)
 #ifdef T_WATCH_S3
             PMU->enablePowerOutput(XPOWERS_ALDO2);
 #endif
+
+#if defined(Nodara) && defined(PIN_EINK_POWER)
+            static_cast<EInkDisplay *>(dispdev)->powerOn();
+#endif // Nodara
 
 // some screens seem to need a kick in the pants to turn back on
 #if defined(MUZI_BASE) || defined(M5STACK_CARDPUTER_ADV)
@@ -631,6 +648,13 @@ void Screen::handleSetOn(bool on, FrameCallback einkScreensaver)
 #endif
 #endif
 
+#if defined(Nodara) && defined(PIN_EINK_POWER)
+#if defined(HAS_EINK_ASYNCFULL) && defined(USE_EINK_DYNAMICDISPLAY)
+            EINK_JOIN_ASYNCREFRESH(dispdev);
+#endif
+            static_cast<EInkDisplay *>(dispdev)->powerOff();
+#endif // Nodara
+
 #ifdef T_WATCH_S3
             PMU->disablePowerOutput(XPOWERS_ALDO2);
 #endif
@@ -639,7 +663,6 @@ void Screen::handleSetOn(bool on, FrameCallback einkScreensaver)
         screenOn = on;
     }
 }
-
 void Screen::setup()
 {
 
@@ -818,8 +841,16 @@ void Screen::forceDisplay(bool forceUiUpdate)
 {
     // Nasty hack to force epaper updates for 'key' frames.  FIXME, cleanup.
 #ifdef USE_EINK
+#if defined(Nodara)
+    // Hard power-off guard: SPI1 is closed when screenOn==false.
+    // forceDisplay() called from e.g. handleTextMessage() while screen is off
+    // would drive SPI1 on a closed bus → Hard Fault on nRF52.
+    if (!screenOn)
+        return;
+#endif // Nodara
     // If requested, make sure queued commands are run, and UI has rendered a new frame
     if (forceUiUpdate) {
+        LOG_INFO("Force E-Ink display update");
         // Force a display refresh, in addition to the UI update
         // Changing the GPS status bar icon apparently doesn't register as a change in image
         // (False negative of the image hashing algorithm used to skip identical frames)
@@ -957,6 +988,7 @@ int32_t Screen::runOnce()
                 showFrame(FrameDirection::NEXT);
             }
             break;
+
         case Cmd::START_ALERT_FRAME: {
             showingBootScreen = false; // this should avoid the edge case where an alert triggers before the boot screen goes away
             showingNormalScreen = false;
@@ -996,6 +1028,7 @@ int32_t Screen::runOnce()
     if (!screenOn) { // If we didn't just wake and the screen is still off, then
                      // stop updating until it is on again
         enabled = false;
+        LOG_WARN("Screen is off");
         return 0;
     }
 
@@ -1084,6 +1117,10 @@ void Screen::setScreensaverFrames(FrameCallback einkScreensaver)
     // If: one-off screensaver frame passed as argument. Handles doDeepSleep()
     if (einkScreensaver != NULL) {
         screensaverFrame = einkScreensaver;
+#if defined(Nodara)
+        // Clear nav bar / banner overlays before deep-sleep screen
+        ui->setOverlays(NULL, 0);
+#endif // Nodara
         ui->setFrames(&screensaverFrame, 1);
     }
 
@@ -1117,7 +1154,7 @@ void Screen::setScreensaverFrames(FrameCallback einkScreensaver)
 #ifdef EINK_HASQUIRK_GHOSTING
     EINK_ADD_FRAMEFLAG(dispdev, COSMETIC); // Really ugly to see ghosting from "screen paused"
 #else
-    EINK_ADD_FRAMEFLAG(dispdev, RESPONSIVE);              // Really nice to wake screen with a fast-refresh
+    EINK_ADD_FRAMEFLAG(dispdev, RESPONSIVE); // Really nice to wake screen with a fast-refresh
 #endif
 }
 #endif
@@ -1174,6 +1211,7 @@ void Screen::setFrames(FrameFocus focus)
     fsi.positions.textMessage = numframes;
     normalFrames[numframes++] = graphics::MessageRenderer::drawTextMessageFrame;
     indicatorIcons.push_back(icon_mail);
+
 
 #ifndef USE_EINK
     if (!hiddenFrames.nodelist_nodes) {
@@ -1323,8 +1361,9 @@ void Screen::setFrames(FrameFocus focus)
     static OverlayCallback overlays[] = {graphics::UIRenderer::drawNavigationBar, NotificationRenderer::drawBannercallback};
     ui->setOverlays(overlays, sizeof(overlays) / sizeof(overlays[0]));
 
-    prevFrame = -1; // Force drawNodeInfo to pick a new node (because our list just changed)
-
+    prevFrame = -1; // Force drawNodeInfo to pick a new node (because our list
+    // just changed)
+    uint8_t frameIndex = 0;
     // Focus on a specific frame, in the frame set we just created
     switch (focus) {
     case FOCUS_DEFAULT:
@@ -1348,14 +1387,31 @@ void Screen::setFrames(FrameFocus focus)
         break;
 
     case FOCUS_PRESERVE:
-        //  No more adjustment — force stay on same index
-        if (previousFrameCount > fsi.frameCount) {
-            ui->switchToFrame(originalPosition - 1);
-        } else if (previousFrameCount < fsi.frameCount) {
-            ui->switchToFrame(originalPosition + 1);
-        } else {
-            ui->switchToFrame(originalPosition);
+        // If we can identify which type of frame "originalPosition" was, can move directly to it in the new frameset
+        const FramesetInfo &oldFsi = this->framesetInfo;
+        if (originalPosition == oldFsi.positions.log)
+            ui->switchToFrame(fsi.positions.log);
+        else if (originalPosition == oldFsi.positions.settings)
+            ui->switchToFrame(fsi.positions.settings);
+        else if (originalPosition == oldFsi.positions.wifi)
+            ui->switchToFrame(fsi.positions.wifi);
+
+        // If frame count has decreased
+        else if (fsi.frameCount < oldFsi.frameCount) {
+            uint8_t numDropped = oldFsi.frameCount - fsi.frameCount;
+            // Move n frames backwards
+            if (numDropped <= originalPosition)
+                ui->switchToFrame(originalPosition - numDropped);
+            // Unless that would put us "out of bounds" (< 0)
+            else
+                ui->switchToFrame(0);
         }
+
+        // If we're not sure exactly which frame we were on, at least return to the same frame number
+        // (node frames; module frames)
+        else
+            ui->switchToFrame(originalPosition);
+
         break;
     }
 
@@ -1633,7 +1689,13 @@ int Screen::handleStatusUpdate(const meshtastic::Status *arg)
         bool currentUSB = powerStatus->getHasUSB();
         if (currentUSB != lastPowerUSBState) {
             lastPowerUSBState = currentUSB;
+#if !defined(Nodara)
             forceDisplay(true);
+#else
+            // Guard: forceDisplay() touches SPI1; skip if panel is powered off
+            if (screenOn)
+                forceDisplay(true);
+#endif // Nodara
         }
         break;
     }
@@ -1662,7 +1724,15 @@ int Screen::handleTextMessage(const meshtastic_MeshPacket *packet)
 
             // Only wake/force display if the configuration allows it
             if (shouldWakeOnReceivedMessage()) {
+#if defined(Nodara)
+                // setOn(true) is async (enqueues SET_ON); forceDisplay() runs immediately
+                // after and hits a closed SPI1 bus → Hard Fault. Use the synchronous
+                // handleSetOn() so the panel is powered and SPI1 is restored before
+                // forceDisplay() touches the bus.
+                handleSetOn(true);
+#else
                 setOn(true);    // Wake up the screen first
+#endif                          // Nodara
                 forceDisplay(); // Forces screen redraw
             }
             // === Prepare banner/popup content ===
@@ -1693,7 +1763,11 @@ int Screen::handleTextMessage(const meshtastic_MeshPacket *packet)
             if (NotificationRenderer::current_notification_type == notificationTypeEnum::text_input) {
                 // Wake and force redraw so popup is visible immediately
                 if (shouldWakeOnReceivedMessage()) {
+#if defined(Nodara)
+                    handleSetOn(true); // Synchronous: SPI1 must be up before forceDisplay()
+#else
                     setOn(true);
+#endif // Nodara
                     forceDisplay();
                 }
 
@@ -1817,9 +1891,22 @@ int Screen::handleInputEvent(const InputEvent *event)
 
     // Handle text input notifications specially - pass input to virtual keyboard
     if (NotificationRenderer::current_notification_type == notificationTypeEnum::text_input) {
+#ifdef Nodara
+#ifdef USE_EINK
+        EINK_ADD_FRAMEFLAG(dispdev, DEMAND_FAST);
+        EINK_ADD_FRAMEFLAG(dispdev, BLOCKING);
+#endif
+#endif
         NotificationRenderer::inEvent = *event;
         static OverlayCallback overlays[] = {graphics::UIRenderer::drawNavigationBar, NotificationRenderer::drawBannercallback};
         ui->setOverlays(overlays, sizeof(overlays) / sizeof(overlays[0]));
+#if defined(Nodara) && defined(USE_EINK)
+        // text_input branch must also set DEMAND_FAST: the general-purpose flag block below
+        // is only reached for non-text_input events, so without this the E-ink dynamic
+        // display skips every cursor-move frame (FRAME_MATCHED_PREVIOUS).
+        EINK_ADD_FRAMEFLAG(dispdev, DEMAND_FAST);
+        EINK_ADD_FRAMEFLAG(dispdev, BLOCKING);
+#endif                      // Nodara
         setFastFramerate(); // Draw ASAP
         ui->update();
         return 0;
@@ -1841,6 +1928,17 @@ int Screen::handleInputEvent(const InputEvent *event)
         menuHandler::handleMenuSwitch(dispdev);
         return 0;
     }
+
+    bool inputIntercepted = false;
+    if (showingNormalScreen) {
+        // Ask any MeshModules if they're handling keyboard input right now.
+        for (MeshModule *module : moduleFrames) {
+            if (module && module->interceptingKeyboardInput())
+                inputIntercepted = true;
+        }
+    }
+
+
     // UP/DOWN in message screen scrolls through message threads
     if (ui->getUiState()->currentFrame == framesetInfo.positions.textMessage) {
 
@@ -1886,14 +1984,6 @@ int Screen::handleInputEvent(const InputEvent *event)
     // Use left or right input from a keyboard to move between frames,
     // so long as a mesh module isn't using these events for some other purpose
     if (showingNormalScreen) {
-
-        // Ask any MeshModules if they're handling keyboard input right now
-        bool inputIntercepted = false;
-        for (MeshModule *module : moduleFrames) {
-            if (module && module->interceptingKeyboardInput())
-                inputIntercepted = true;
-        }
-
         // If no modules are using the input, move between frames
         if (!inputIntercepted) {
 #if defined(INPUTDRIVER_ENCODER_TYPE) && INPUTDRIVER_ENCODER_TYPE == 2
@@ -1916,6 +2006,7 @@ int Screen::handleInputEvent(const InputEvent *event)
                 return 0;
             }
 #endif
+            LOG_INFO("Screen::handleInputEvent: event->inputEvent=%d", event->inputEvent);
             if (event->inputEvent == INPUT_BROKER_LEFT || event->inputEvent == INPUT_BROKER_ALT_PRESS) {
                 showFrame(FrameDirection::PREVIOUS);
             } else if (event->inputEvent == INPUT_BROKER_RIGHT || event->inputEvent == INPUT_BROKER_USER_PRESS) {
@@ -1965,19 +2056,21 @@ int Screen::handleInputEvent(const InputEvent *event)
                        this->ui->getUiState()->currentFrame == framesetInfo.positions.home) {
                 cannedMessageModule->LaunchWithDestination(NODENUM_BROADCAST);
             } else if (event->inputEvent == INPUT_BROKER_SELECT) {
-                if (this->ui->getUiState()->currentFrame == framesetInfo.positions.home) {
+                uint8_t currentFrame = this->ui->getUiState()->currentFrame;
+
+                if (currentFrame == framesetInfo.positions.home) {
                     menuHandler::homeBaseMenu();
-                } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.system) {
+                } else if (currentFrame == framesetInfo.positions.system) {
                     menuHandler::systemBaseMenu();
 #if HAS_GPS
-                } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.gps && gps) {
+                } else if (currentFrame == framesetInfo.positions.gps && gps) {
                     menuHandler::positionBaseMenu();
 #endif
-                } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.clock) {
+                } else if (currentFrame == framesetInfo.positions.clock) {
                     menuHandler::clockMenu();
-                } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.lora) {
+                } else if (currentFrame == framesetInfo.positions.lora) {
                     menuHandler::loraMenu();
-                } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.textMessage) {
+                } else if (currentFrame == framesetInfo.positions.textMessage) {
                     if (!messageStore.getMessages().empty()) {
                         menuHandler::messageResponseMenu();
                     } else {
@@ -1987,19 +2080,18 @@ int Screen::handleInputEvent(const InputEvent *event)
                             menuHandler::textMessageBaseMenu();
                         }
                     }
-                } else if (framesetInfo.positions.firstFavorite != 255 &&
-                           this->ui->getUiState()->currentFrame >= framesetInfo.positions.firstFavorite &&
-                           this->ui->getUiState()->currentFrame <= framesetInfo.positions.lastFavorite) {
+                } else if (framesetInfo.positions.firstFavorite != 255 && currentFrame >= framesetInfo.positions.firstFavorite &&
+                           currentFrame <= framesetInfo.positions.lastFavorite) {
                     menuHandler::favoriteBaseMenu();
-                } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.nodelist_nodes ||
+                } else if (currentFrame == framesetInfo.positions.nodelist_nodes ||
                            this->ui->getUiState()->currentFrame == framesetInfo.positions.nodelist_location ||
-                           this->ui->getUiState()->currentFrame == framesetInfo.positions.nodelist_lastheard ||
-                           this->ui->getUiState()->currentFrame == framesetInfo.positions.nodelist_hopsignal ||
-                           this->ui->getUiState()->currentFrame == framesetInfo.positions.nodelist_distance ||
-                           this->ui->getUiState()->currentFrame == framesetInfo.positions.nodelist_hopsignal ||
-                           this->ui->getUiState()->currentFrame == framesetInfo.positions.nodelist_bearings) {
+                           currentFrame == framesetInfo.positions.nodelist_lastheard ||
+                           currentFrame == framesetInfo.positions.nodelist_hopsignal ||
+                           currentFrame == framesetInfo.positions.nodelist_distance ||
+                           currentFrame == framesetInfo.positions.nodelist_hopsignal ||
+                           currentFrame == framesetInfo.positions.nodelist_bearings) {
                     menuHandler::nodeListMenu();
-                } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.wifi) {
+                } else if (currentFrame == framesetInfo.positions.wifi) {
                     menuHandler::wifiBaseMenu();
                 }
             } else if (event->inputEvent == INPUT_BROKER_BACK) {

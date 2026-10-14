@@ -16,7 +16,6 @@
 #include "modules/StatusLEDModule.h"
 #include "sleep.h"
 #include "target_specific.h"
-
 #ifdef ARCH_ESP32
 // "esp_pm_config_esp32_t is deprecated, please include esp_pm.h and use esp_pm_config_t instead"
 #include "esp32/pm.h"
